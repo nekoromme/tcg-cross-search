@@ -1,4 +1,4 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.4.2';
+import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.4.3';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 
 const els = {
@@ -131,7 +131,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.4.2',
+          v: '0.4.3',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });

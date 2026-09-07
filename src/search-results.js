@@ -16,8 +16,13 @@ import {
 import { productKind } from '../public/product-kind.js';
 import { createQueryMatcher } from '../public/catalog.js';
 
-export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, limit = 2, preferBoxes = false) {
+export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, limit = 2, preferBoxes = false, diagnostics = {}) {
   if (!html) return [];
+  // 同じページをもう一度解析・取得せず、候補が無い理由を数える。
+  const counted = new Set();
+  for (const key of ['productLinks', 'matchingLinks', 'excludedSingles', 'excludedOther']) diagnostics[key] ||= 0;
+  // 非表示のテンプレートやコメント内の商品を、店に並ぶ商品として拾わない。
+  html = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ');
   const queryNorm = normalizeText(query);
   const tokens = makeQueryTokens(query);
   const matchesQuery = createQueryMatcher(query);
@@ -52,8 +57,18 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     const sealedTitle = isSealedTitle(title);
     const junkTitle = isJunkTitle(title);
     const singleCard = looksLikeSingleCard(title);
-    if (sealedOnly && (junkTitle || singleCard || (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(title)))) continue;
-    if (!matchesQuery(title)) continue;
+    const matches = matchesQuery(title);
+    const excluded = sealedOnly && (junkTitle || singleCard || (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(title)));
+    const evidenceKey = normalizeUrlKey(url);
+    if (title && !counted.has(evidenceKey)) {
+      counted.add(evidenceKey); diagnostics.productLinks++;
+      if (matches) {
+        diagnostics.matchingLinks++;
+        if (sealedOnly && singleCard) diagnostics.excludedSingles++;
+        else if (excluded) diagnostics.excludedOther++;
+      }
+    }
+    if (excluded || !matches) continue;
 
     // 次の商品リンクに達したら切る。隣の商品の価格・在庫を混ぜない。
     const tail = html.slice(anchorRe.lastIndex, anchorRe.lastIndex + 1800);
