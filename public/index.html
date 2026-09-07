@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow">
   <title>TCG横断在庫検索</title>
-  <link rel="stylesheet" href="/styles.css?v=0.5.0">
+  <link rel="stylesheet" href="/styles.css?v=0.6.0">
 </head>
 <body>
   <main class="wrap">
@@ -56,6 +56,16 @@
           <div id="history" class="history" aria-label="最近の検索"></div>
           <div id="searchHint" class="help"></div>
         </details>
+        <details id="favoritesPanel" class="searchSettings favoritesPanel">
+          <summary id="favoritesSummary">お気に入り・再検索（0件）</summary>
+          <p class="help">今の検索語・ゲーム・価格条件・表示条件を30件まで保存。商品名を押すと保存した条件で検索します。このブラウザ内だけに保存され、履歴や在庫は他の端末と同期されません。</p>
+          <div class="favoriteActions">
+            <button id="saveFavorite" type="button" class="chip">今の検索条件を保存</button>
+            <button id="undoFavorite" type="button" class="chip" hidden>削除を取り消す</button>
+          </div>
+          <p id="favoriteMessage" class="help" role="status" aria-live="polite"></p>
+          <div id="favoritesList" class="favoritesList"></div>
+        </details>
         <div class="searchRow">
           <input id="query" type="search" autocomplete="off" enterkeyhint="search" maxlength="100"
                  aria-label="商品名・型番" placeholder="例：GD05 / ストームエメラルダ" list="catalogSuggestions" required>
@@ -94,6 +104,6 @@
       <div id="catalogList" class="catalogList"></div>
     </details>
   </main>
-  <script type="module" src="/app.js?v=0.5.0"></script>
+  <script type="module" src="/app.js?v=0.6.0"></script>
 </body>
 </html>
