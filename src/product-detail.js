@@ -55,6 +55,10 @@ export function parseProductDetail(html) {
   if (out.stock === 'unknown') {
     const stock = extractStock(mainText);
     if (stock.stock !== 'unknown') { out.stock = stock.stock; out.stockQty = stock.qty; }
+  } else {
+    // 構造化データで在庫が分かっていても、同じ商品の数量は拾う。
+    const stock = extractStock(mainText);
+    if (stock.stock === out.stock) out.stockQty = stock.qty;
   }
   return out;
 }
@@ -62,8 +66,11 @@ export function parseProductDetail(html) {
 function extractMainProductRegion(html, productHeading) {
   const source = String(html || '');
   // 商品名の直前にあるナビゲーションやカート内の在庫表記は読まない。
-  if (productHeading) return source.slice(productHeading.index, Math.min(source.length, productHeading.index + 45000));
-  return source.slice(0, Math.min(source.length, 60000));
+  // 商品の位置を特定できないページ全体から価格を拾わない。
+  if (!productHeading) return '';
+  const region = source.slice(productHeading.index, productHeading.index + 45000);
+  const boundary = region.search(/<(?:div|section|aside|ul)\b[^>]*(?:id|class)=["'][^"']*(?:related|recommend|recently|checked-contents)[^"']*["']|<h[2-6]\b[^>]*>\s*(?:おすすめ|関連商品|最近チェック)|<!--\s*(?:関連商品|おすすめ|最近チェック)/i);
+  return (boundary < 0 ? region : region.slice(0, boundary)).replace(/<!--[\s\S]*?-->/g, ' ');
 }
 
 function getMetaContent(html, property) {
@@ -99,8 +106,6 @@ function findProductJsonLd(obj) {
   const type = obj['@type'];
   if (type === 'Product' || (Array.isArray(type) && type.includes('Product'))) return obj;
   if (obj['@graph']) return findProductJsonLd(obj['@graph']);
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === 'object') { const result = findProductJsonLd(value); if (result) return result; }
-  }
+  // ItemList内のおすすめ商品は、表示中の商品の証拠にしない。
   return null;
 }

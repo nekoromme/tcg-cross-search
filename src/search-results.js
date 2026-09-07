@@ -14,8 +14,9 @@ import {
   parseAttributes,
   textMatchesQuery,
 } from './search-common.js';
+import { productKind } from '../public/product-kind.js';
 
-export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, limit = 2) {
+export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, limit = 2, preferBoxes = false) {
   if (!html) return [];
   const queryNorm = normalizeText(query);
   const tokens = makeQueryTokens(query);
@@ -30,6 +31,7 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     if (!href || href.startsWith('#') || /^javascript:/i.test(href) || /^mailto:/i.test(href)) continue;
     const url = absoluteUrl(baseUrl, href);
     if (!isLikelyProductUrl(url)) continue;
+    if (new URL(url).origin !== new URL(baseUrl).origin) continue;
 
     const fullAnchor = match[0];
     const attrsText = `${match[1] || ''} ${match[3] || ''}`;
@@ -42,10 +44,18 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
       }
     }
     if (!title) title = cleanText(parseAttributes(`<a ${attrsText}>`).title || '');
+    const anchorText = title;
+    // カード全体がリンクの店では、価格・在庫まで商品名に含まれている。
+    title = title.replace(/\s+(?:販売価格\s*[:：]?\s*)?(?:[￥¥]\s*)?[\d,]+\s*円[\s\S]*$/, '').trim();
 
-    const start = Math.max(0, match.index - 180);
-    const end = Math.min(html.length, anchorRe.lastIndex + 1300);
-    const context = cleanText(html.slice(start, end));
+    // 次の商品リンクに達したら切る。隣の商品の価格・在庫を混ぜない。
+    const tail = html.slice(anchorRe.lastIndex, anchorRe.lastIndex + 1800);
+    const nextProduct = [...tail.matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi)]
+      .find((link) => {
+        const next = absoluteUrl(baseUrl, link[1]);
+        return isLikelyProductUrl(next) && normalizeUrlKey(next) !== normalizeUrlKey(url);
+      });
+    const context = cleanText(tail.slice(0, nextProduct?.index ?? tail.length));
     const titleNorm = normalizeText(title);
     const contextNorm = normalizeText(context);
     if (!textMatchesQuery(titleNorm, contextNorm, queryNorm, tokens)) continue;
@@ -55,8 +65,8 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     const singleCard = looksLikeSingleCard(title);
     if (sealedOnly) {
       if (junkTitle) continue;
-      if (!sealedTitle && singleCard) continue;
-      if (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(context)) continue;
+      if (singleCard) continue;
+      if (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(title)) continue;
     }
 
     let score = 0;
@@ -73,9 +83,8 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     if (singleCard) score -= 30;
     if (junkTitle) score -= 50;
 
-    const afterText = cleanText(html.slice(anchorRe.lastIndex, Math.min(html.length, anchorRe.lastIndex + 900)));
-    const price = extractPrice(afterText) ?? extractPrice(context);
-    const stockInfo = extractStock(afterText || context);
+    const price = extractPrice(anchorText.slice(title.length)) ?? extractPrice(context);
+    const stockInfo = extractStock(anchorText === title ? context : anchorText);
     if (sealedOnly && price != null && price < 500 && !/パック(?!入り)/.test(title)) score -= 10;
 
     const candidate = {
@@ -86,6 +95,7 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
       stockQty: stockInfo.qty,
       score,
       detailChecked: false,
+      kind: productKind(title),
     };
     if (!candidate.title) continue;
     const key = normalizeUrlKey(url);
@@ -95,6 +105,7 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
 
   return [...byUrl.values()]
     .sort((a, b) => {
+      if (preferBoxes && (a.kind === 'box') !== (b.kind === 'box')) return a.kind === 'box' ? -1 : 1;
       if (a.score !== b.score) return b.score - a.score;
       if (a.price == null && b.price != null) return 1;
       if (a.price != null && b.price == null) return -1;

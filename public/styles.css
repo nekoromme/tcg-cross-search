@@ -122,3 +122,23 @@ button:disabled { opacity: .55; cursor: wait; }
   .statusRow { grid-template-columns: 1fr auto; }
   .statusRow .message, .statusRow .manual { grid-column: 1 / -1; }
 }
+
+/* スマホでも選択しやすい大きさにし、長い商品名は枠の中で折り返す。 */
+.displayOptions { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 12px; }
+.displayOptions label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
+.displayOptions select { min-height: 44px; max-width: 100%; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.displayOptions .stockFilter { display: flex; align-items: center; min-height: 44px; }
+input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.unitBadge { display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); margin-right: 5px; }
+.title { min-width: 0; overflow-wrap: anywhere; }
+.chip { color: var(--text); }
+.help { color: var(--muted); font-size: 13px; line-height: 1.6; }
+[hidden] { display: none !important; }
+@media (max-width: 780px) {
+  .result .storeInfo { grid-column: 1 / -1; }
+  .result .stockCell { justify-self: end; }
+  .displayOptions { display: grid; grid-template-columns: 1fr 1fr; }
+  .displayOptions label { min-width: 0; }
+  .displayOptions .stockFilter { grid-column: 1 / -1; }
+  .price { font-size: 21px; }
+}

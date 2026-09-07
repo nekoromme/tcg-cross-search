@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow">
   <title>TCG横断在庫検索</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=0.3.0">
 </head>
 <body>
   <main class="wrap">
@@ -19,20 +19,27 @@
       <form id="searchForm">
         <div class="searchRow">
           <input id="query" type="search" autocomplete="off" enterkeyhint="search" maxlength="100"
-                 placeholder="例：GD03 / Steel Requiem / 4904810939542" required>
+                 aria-label="商品名・型番" placeholder="例：GD03 / Steel Requiem" required>
           <button id="searchButton" type="submit">横断検索</button>
         </div>
         <div class="options">
-          <label><input id="sealedOnly" type="checkbox" checked> BOX・カートン・新品を優先</label>
-          <label><input id="forceRefresh" type="checkbox"> 10分キャッシュを無視</label>
-          <label><input id="inStockOnly" type="checkbox"> 在庫ありだけ表示</label>
+          <label><input id="forceRefresh" type="checkbox"> 最新情報を取り直す</label>
         </div>
         <div id="history" class="history" aria-label="最近の検索"></div>
       </form>
     </section>
 
     <section class="panel compact">
-      <div class="summary">
+      <div class="displayOptions">
+        <label for="unitFilter">販売単位
+          <select id="unitFilter"><option value="box">BOXのみ</option><option value="sealed">BOX＋カートン・セット</option><option value="all">パックなども含める</option></select>
+        </label>
+        <label for="sortOrder">並び順
+          <select id="sortOrder"><option value="price_asc">価格が安い順</option><option value="price_desc">価格が高い順</option><option value="stock">在庫あり優先</option><option value="store">店名順</option></select>
+        </label>
+        <label class="stockFilter"><input id="inStockOnly" type="checkbox"> 在庫ありのみ</label>
+      </div>
+      <div class="summary" aria-live="polite">
         <span id="progress">ショップ一覧を読み込み中…</span>
         <span id="resultCount"></span>
       </div>
@@ -42,15 +49,21 @@
       <div class="empty">検索語を入れて実行して。</div>
     </section>
 
+    <details id="reviewPanel" class="panel diagnostics" hidden>
+      <summary id="reviewSummary">確認が必要な候補</summary>
+      <p class="help">価格・在庫・販売単位のどれかを確認できなかった候補。商品ページで確認できます。</p>
+      <div id="reviewResults" class="results"></div>
+    </details>
+
     <details class="panel diagnostics">
-      <summary>検索できなかった店・該当なしの店</summary>
+      <summary>店舗別の検索状況・店内検索リンク</summary>
       <div id="storeStatuses" class="statusList"></div>
     </details>
 
     <p class="foot">
-      価格・在庫は各ショップ公開ページからの自動判定。注文前に商品ページで最終確認して。サイトが自動取得を拒否した場合は回避せず、手動確認リンクへ切り替える。
+      表示価格は商品単位・送料別。各店の検索結果の先頭ページから最大8候補を抽出し、BOXを優先して最大4件の詳細を確認します。全商品の網羅・最安値は保証しません。注文前に商品ページで価格・在庫・販売条件を確認してください。
     </p>
   </main>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=0.3.0"></script>
 </body>
 </html>
