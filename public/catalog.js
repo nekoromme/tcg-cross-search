@@ -1,5 +1,5 @@
 import { PRODUCTS, CATALOG_UPDATED } from './catalog-data.js';
-import { productKind } from './product-kind.js';
+import { productKind, isSpecialSet } from './product-kind.js';
 export { PRODUCTS, CATALOG_UPDATED };
 
 export const GAMES = { pokemon: 'ポケモンカード', onepiece: 'ワンピース', gundam: 'ガンダム', dragonball: 'ドラゴンボール（フュージョンワールド）', lorcana: 'ロルカナ' };
@@ -68,7 +68,7 @@ export function comparePrice(row) {
   if (/英語版|海外版|中国語|韓国語|繁体|繁體|簡体|简体|english(?:\s*(?:ver|version|edition))?|\bEN\b/i.test(row.title))
     return { ...base, status: 'unknown', reason: '日本語版と価格を比較できず' };
   if ((row.kind || productKind(row.title)) !== 'box') return { ...base, status: 'unknown', reason: '1BOX以外は定価比較の対象外' };
-  if (/デラックス|プレミアムセット|ギフトセット|特別セット|スターター|スタートデッキ|構築済|デッキボックス/i.test(row.title))
+  if (isSpecialSet(row.title))
     return { ...base, status: 'unknown', reason: '通常のブースターBOXと仕様が異なる可能性' };
   if (!product.boxPrice) return { ...base, status: 'unknown', reason: 'BOX定価の資料を確認中' };
   if (!row.detailChecked || !Number.isInteger(row.price) || row.price <= 0 || row.priceComparable === false)

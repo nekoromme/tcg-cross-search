@@ -1,4 +1,4 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.4.0';
+import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.4.2';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 
 const els = {
@@ -131,7 +131,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.4.0',
+          v: '0.4.2',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
@@ -194,7 +194,7 @@ function updateQueryHint() {
 }
 function renderCatalog() {
   const confirmed = PRODUCTS.filter(p => p.boxPrice > 0);
-  document.querySelector('#catalogSummary').textContent = `定価台帳：${confirmed.length}商品確認済み（${CATALOG_UPDATED}）`;
+  document.querySelector('#catalogSummary').textContent = `定価台帳：${confirmed.length}商品登録（台帳更新 ${CATALOG_UPDATED}）`;
   const datalist = document.querySelector('#catalogSuggestions');
   const list = document.querySelector('#catalogList');
   for (const [game, label] of Object.entries(GAMES)) {

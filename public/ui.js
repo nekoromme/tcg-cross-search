@@ -1,4 +1,4 @@
-import { productKind, KIND_LABELS } from './product-kind.js';
+import { productKind, isSpecialSet, KIND_LABELS } from './product-kind.js';
 import { comparePrice, withinPriceLimit, explicitGame, identifyProduct } from './catalog.js';
 
 // 取得順に左右されない並び替え。同価格のときは店名・商品URLで安定させる。
@@ -10,7 +10,7 @@ export function flattenRows(storeResults, sort = 'price_asc') {
       const key = `${result.store.id}:${item.url}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      rows.push({ ...item, comparison: comparePrice(item), kind: item.kind || productKind(item.title),
+      rows.push({ ...item, comparison: comparePrice(item), kind: isSpecialSet(item.title) ? productKind(item.title) : item.kind || productKind(item.title),
         price: Number.isFinite(item.price) && item.price > 0 ? item.price : null,
         storeId: result.store.id, storeName: result.store.name, storeNote: result.store.note || '',
         searchedAt: result.searchedAt });
@@ -45,7 +45,7 @@ export function selectRows(storeResults, options = {}) {
   for (const row of rows) {
     const identifiedGame = explicitGame(row.title) || identifyProduct(row.title)?.game;
     if (game && identifiedGame && identifiedGame !== game) { hidden++; continue; }
-    if ((unit === 'box' && ['carton', 'bundle', 'pack'].includes(row.kind)) ||
+    if ((unit === 'box' && ['carton', 'bundle', 'pack', 'special'].includes(row.kind)) ||
         (unit === 'sealed' && row.kind === 'pack') ||
         (!includePreorders && row.stock === 'preorder') ||
         (inStockOnly && row.stock !== 'in_stock')) { hidden++; continue; }

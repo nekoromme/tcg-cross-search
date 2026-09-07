@@ -1,12 +1,13 @@
 // 公式価格と入数の出典を確認した商品だけを追加する。未登録の商品へ価格を推測しない。
-export const CATALOG_UPDATED = '2026-09-07';
+export const CATALOG_UPDATED = '2026-09-08';
 const source = (label, url) => ({ label, url });
 const official = url => source('公式商品情報', url);
 const box = url => source('公式BOX価格・仕様', url);
 const count = url => source('BOX入数の確認元', url);
 function entry(game, code, name, releaseDate, boxPrice, basis, sources, extra = {}) {
   return { id: `${game}-${code.toLowerCase()}`, game, code, name, releaseDate, boxPrice, basis, sources,
-    checkedAt: CATALOG_UPDATED, language: 'ja', aliases: [name, ...(extra.aliases || [])],
+    // 台帳更新だけで、再確認していない既存商品の確認日を進めない。
+    checkedAt: '2026-09-07', language: 'ja', aliases: [name, ...(extra.aliases || [])],
     searchTerm: code, ...Object.fromEntries(Object.entries(extra).filter(([key]) => key !== 'aliases')) };
 }
 const gundam = 'https://www.gundam-gcg.com/jp/products/';
@@ -15,7 +16,35 @@ const center = 'https://www.pokemoncenter-online.com/';
 const onepiece = 'https://www.onepiece-cardgame.com/';
 const dragonball = 'https://www.dbs-cardgame.com/fw/jp/';
 const squareCount = count('https://www.masters-square.com/pickup');
+// 追加バッチの確認日。出典は通常の日本語版1BOXの価格・仕様に限る。
+const checked = extra => ({ checkedAt: '2026-09-08', ...extra });
 export const PRODUCTS = [
+  entry('pokemon', 'M1L', 'メガブレイブ', '2025-08-01', 5400, 'official_box',
+    [official(pokemon+'m1/index.html'), box(center+'9900000006211.html')], checked({ searchTerm:'メガブレイブ' })),
+  entry('pokemon', 'M1S', 'メガシンフォニア', '2025-08-01', 5400, 'pack_times_count',
+    [official(pokemon+'m1/index.html'), count(center+'9900000006228.html')], checked({ packPrice:180, packsPerBox:30, searchTerm:'メガシンフォニア' })),
+  entry('pokemon', 'M2', 'インフェルノX', '2025-09-26', 5400, 'official_box',
+    [official(pokemon+'m2/index.html'), box(center+'9900000006679.html')], checked({ searchTerm:'インフェルノX' })),
+  entry('pokemon', 'SV9', 'バトルパートナーズ', '2025-01-24', 5400, 'pack_times_count',
+    [official(pokemon+'sv9/index.html'), source('BOX入数（メーカー商品情報）', 'https://www.amazon.co.jp/dp/B0DB7C1Z26')],
+    checked({ packPrice:180, packsPerBox:30, searchTerm:'バトルパートナーズ' })),
+  entry('pokemon', 'SV9a', '熱風のアリーナ', '2025-03-14', 5400, 'official_box',
+    [official('https://www.pokemon-card.com/products/sv/sv9a.html'), box(center+'9900000006013.html')], checked({ searchTerm:'熱風のアリーナ' })),
+  entry('pokemon', 'SV10', 'ロケット団の栄光', '2025-04-18', 5400, 'official_box',
+    [official(pokemon+'sv10/index.html'), box(center+'9900000006037.html')], checked({ searchTerm:'ロケット団の栄光' })),
+  entry('onepiece', 'OP-11', '神速の拳', '2025-03-01', 5280, 'official_box',
+    [official(onepiece+'products/boosters/op11.php'), box('https://p-bandai.jp/item/item-1000237262/')], checked()),
+  entry('onepiece', 'OP-12', '師弟の絆', '2025-05-31', 5280, 'official_box',
+    [official(onepiece+'products/boosters/op12.php'), box('https://p-bandai.jp/item/item-1000238054/')], checked()),
+  entry('onepiece', 'OP-13', '受け継がれる意志', '2025-08-23', 5280, 'official_box',
+    [official(onepiece+'products/boosters/op13/'), box('https://p-bandai.jp/item/item-1000243979/')], checked()),
+  entry('onepiece', 'OP-14', '蒼海の七傑', '2025-11-22', 5280, 'official_box',
+    [official(onepiece+'products/boosters/op14.php'), box('https://p-bandai.jp/item/item-1000254607/')], checked()),
+  entry('dragonball', 'SB01', 'MANGA BOOSTER 01', '2025-06-28', 7920, 'pack_times_count',
+    [official(dragonball+'products/01_190.html'), count('https://store.toei-anim.co.jp/shop/g/gDBS00120O1/')],
+    checked({ packPrice:330, packsPerBox:24, aliases:['マンガブースター01'] })),
+  entry('dragonball', 'SB02', 'MANGA BOOSTER 02', '2025-11-08', 7920, 'official_box',
+    [official(dragonball+'products/01_259.html'), box('https://p-bandai.jp/item/item-1000244821/')], checked({ aliases:['マンガブースター02'] })),
   entry('pokemon', 'M6', 'ストームエメラルダ', '2026-07-31', 6000, 'pack_times_count',
     [official(pokemon+'m6/'), count(center+'9900000008109.html')], { packPrice:200, packsPerBox:30, searchTerm:'ストームエメラルダ' }),
   entry('pokemon', 'M5', 'アビスアイ', '2026-05-22', 6000, 'pack_times_count',
