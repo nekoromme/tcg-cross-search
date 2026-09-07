@@ -1,5 +1,6 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.5.0';
+import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.6.0';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
+import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
 
 const els = {
   form: document.querySelector('#searchForm'),
@@ -26,6 +27,12 @@ const els = {
   includeUnknown: document.querySelector('#includeUnknown'),
   includePreorders: document.querySelector('#includePreorders'),
   searchHint: document.querySelector('#searchHint'),
+  favoritesPanel: document.querySelector('#favoritesPanel'),
+  favoritesSummary: document.querySelector('#favoritesSummary'),
+  favoritesList: document.querySelector('#favoritesList'),
+  saveFavorite: document.querySelector('#saveFavorite'),
+  undoFavorite: document.querySelector('#undoFavorite'),
+  favoriteMessage: document.querySelector('#favoriteMessage'),
 };
 
 let stores = [];
@@ -34,6 +41,8 @@ let searching = false;
 let currentRun = 0;
 let hasSearched = false;
 let activeStores = [];
+const favorites = createFavoritesStore();
+let deletedFavorite = null;
 
 init();
 
@@ -54,6 +63,7 @@ async function init() {
   renderCatalog();
   updateQueryHint();
   refreshHistory();
+  refreshFavorites();
   try {
     const response = await fetch('/api/stores', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -62,6 +72,7 @@ async function init() {
     activeStores = stores;
     els.progress.textContent = `${stores.length}売り場を検索できる。`;
     renderStatuses(els.statuses, stores, storeResults, searching);
+    refreshFavorites();
   } catch (error) {
     els.progress.textContent = `ショップ一覧の取得に失敗: ${error.message}`;
   }
@@ -104,11 +115,13 @@ async function startSearch() {
   // 設定を閉じ、スマホのキーボードも閉じる。結果へ自動スクロールはしない。
   // 履歴が増えても閉じた設定内なので、検索ボタンの下を押し下げない。
   els.searchSettings.open = false;
+  els.favoritesPanel.open = false;
   if (document.activeElement === els.query) els.query.blur();
   saveHistory(query);
   refreshHistory();
   storeResults = new Map();
   searching = true;
+  refreshFavorites();
   hasSearched = true;
   els.reviewPanel.open = false;
   const runId = ++currentRun;
@@ -133,7 +146,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.5.0',
+          v: '0.6.0',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
@@ -171,6 +184,7 @@ async function startSearch() {
   els.gameFilter.disabled = false;
   els.searchDepth.disabled = false;
   els.forceRefresh.checked = false;
+  refreshFavorites();
   updateProgress(completed, true);
   updateResults();
   renderStatuses(els.statuses, activeStores, storeResults, searching);
@@ -187,6 +201,95 @@ function refreshHistory() {
     updateQueryHint();
     els.query.focus();
   });
+}
+
+// 保存・削除・条件の読み込みはブラウザ内だけで完結する。
+// 「商品名」のボタンを押した時だけ通常の横断検索を1回実行する。
+els.saveFavorite.addEventListener('click', () => {
+  if (searching) return;
+  const result = favorites.save({ ...displayOptions(), query: els.query.value, depth: els.searchDepth.value });
+  refreshFavorites();
+  els.favoriteMessage.textContent = result.error || (result.duplicate ? '同じ検索条件を保存済みです。' : '今の検索条件を保存しました。');
+});
+els.undoFavorite.addEventListener('click', () => {
+  if (!deletedFavorite || searching) return;
+  const result = favorites.save(deletedFavorite);
+  if (!result.error) deletedFavorite = null;
+  refreshFavorites();
+  els.favoriteMessage.textContent = result.error || '削除を取り消しました。';
+});
+window.addEventListener('storage', event => { if (event.key === FAVORITES_KEY || event.key === null) refreshFavorites(); });
+
+function applyFavorite(item) {
+  // 毎回すべての条件を戻す。別商品の価格上限やゲームを混ぜない。
+  els.query.value = item.query;
+  els.gameFilter.value = item.game;
+  els.searchDepth.value = item.depth;
+  els.resultView.value = item.view;
+  els.unitFilter.value = item.unit;
+  els.sortOrder.value = item.sort;
+  els.inStockOnly.checked = item.inStockOnly;
+  els.priceLimit.value = item.priceLimit;
+  els.maxPrice.value = item.maxPrice ?? '';
+  els.includeUnknown.checked = item.includeUnknown;
+  els.includePreorders.checked = item.includePreorders;
+  // 強制取り直しは保存しない。再検索でも通常の10分キャッシュを利用する。
+  els.forceRefresh.checked = false;
+  try { localStorage.setItem('tcg-display-options', JSON.stringify(displayOptions())); } catch {}
+  updateQueryHint();
+  updateResults();
+}
+
+function favoriteDescription(item) {
+  const label = (element, value) => [...element.options].find(option => option.value === value)?.textContent || value;
+  return [GAMES[item.game] || '全ゲーム', label(els.searchDepth, item.depth), label(els.unitFilter, item.unit),
+    label(els.priceLimit, item.priceLimit), item.maxPrice ? `上限${item.maxPrice.toLocaleString('ja-JP')}円` : '金額上限なし',
+    item.inStockOnly ? '在庫ありのみ' : '在庫状態すべて', item.includePreorders ? '予約も表示' : '予約を除外',
+    item.includeUnknown ? '定価未確認も表示' : '定価確認済みのみ',
+    label(els.sortOrder, item.sort), label(els.resultView, item.view)].join(' ／ ');
+}
+
+function refreshFavorites() {
+  const state = favorites.read();
+  els.favoritesSummary.textContent = `お気に入り・再検索（${state.items.length}件）`;
+  els.saveFavorite.disabled = searching;
+  els.undoFavorite.hidden = !deletedFavorite;
+  els.undoFavorite.disabled = searching;
+  if (state.error) els.favoriteMessage.textContent = state.error;
+  els.favoritesList.replaceChildren();
+  if (!state.items.length) {
+    const empty = document.createElement('p'); empty.className = 'help';
+    empty.textContent = '商品名を入力して「今の検索条件を保存」を押すと、ここから再検索できます。';
+    els.favoritesList.append(empty);
+  }
+  for (const item of state.items) {
+    // 保存内容は文字列として表示。商品名にHTMLが入っても実行しない。
+    const row = document.createElement('div'); row.className = 'favoriteRow';
+    const run = document.createElement('button'); run.type = 'button'; run.className = 'chip favoriteRun';
+    run.textContent = `検索：${item.query}`; run.disabled = searching || !stores.length;
+    run.addEventListener('click', () => { if (searching || !stores.length) return; applyFavorite(item); startSearch(); });
+    const details = document.createElement('details'); details.className = 'favoriteConditions';
+    const summary = document.createElement('summary'); summary.textContent = '保存した条件';
+    const description = document.createElement('p'); description.className = 'help'; description.textContent = favoriteDescription(item);
+    details.append(summary, description);
+    const actions = document.createElement('div'); actions.className = 'favoriteActions';
+    const load = document.createElement('button'); load.type = 'button'; load.className = 'chip'; load.textContent = '条件を読み込む'; load.disabled = searching;
+    load.setAttribute('aria-label', `${item.query}の条件を読み込む`);
+    load.addEventListener('click', () => {
+      if (searching) return;
+      applyFavorite(item); els.searchSettings.open = true;
+      els.favoriteMessage.textContent = '条件を読み込みました。変更して別保存するか、横断検索を押してください。';
+    });
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'chip'; remove.textContent = '削除'; remove.disabled = searching;
+    remove.setAttribute('aria-label', `${item.query}のお気に入りを削除`);
+    remove.addEventListener('click', () => {
+      if (searching) return;
+      const result = favorites.remove(item);
+      if (!result.error) deletedFavorite = item;
+      refreshFavorites(); els.favoriteMessage.textContent = result.error || '削除しました。直前の1件は取り消せます。';
+    });
+    actions.append(load, remove); row.append(run, details, actions); els.favoritesList.append(row);
+  }
 }
 
 els.query.addEventListener('input', updateQueryHint);
