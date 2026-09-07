@@ -1,5 +1,6 @@
 import { productKind, isSpecialSet, KIND_LABELS } from './product-kind.js';
 import { comparePrice, withinPriceLimit, explicitGame, identifyProduct } from './catalog.js';
+import { groupProductRows, comparisonConditions } from './comparison-groups.js';
 
 // 取得順に左右されない並び替え。同価格のときは店名・商品URLで安定させる。
 export function flattenRows(storeResults, sort = 'price_asc') {
@@ -61,8 +62,12 @@ export function selectRows(storeResults, options = {}) {
 
 export function renderRows(container, countEl, storeResults, options = {}) {
   const { main, review, hidden, priceHidden } = selectRows(storeResults, options);
-  countEl.textContent = `${main.length}件表示${review.length ? `・要確認${review.length}件` : ''}${hidden ? `・非表示${hidden}件（価格条件${priceHidden}件）` : ''}`;
-  container.innerHTML = main.length ? main.map(renderCard).join('') : `<div class="empty">${options.searching
+  const grouped = options.view === 'grouped';
+  const groups = grouped ? groupProductRows(main) : [];
+  const groupedCount = groups.filter(g => g.comparable).length;
+  const individualCount = groups.length - groupedCount;
+  countEl.textContent = `${main.length}件表示${grouped && main.length ? `（${groupedCount}商品に集約${individualCount ? `・個別${individualCount}件` : ''}）` : ''}${review.length ? `・要確認${review.length}件` : ''}${hidden ? `・非表示${hidden}件（価格条件${priceHidden}件）` : ''}`;
+  container.innerHTML = main.length ? (grouped ? groups.map(renderProductGroup).join('') : main.map(row => renderCard(row)).join('')) : `<div class="empty">${options.searching
     ? '条件に合う商品を探しています…'
     : !options.hasSearched ? '商品名・型番を入力して検索してください。'
     : review.length ? '確実に比較できる商品はありません。「確認が必要な候補」を開いて確認できます。'
@@ -71,11 +76,24 @@ export function renderRows(container, countEl, storeResults, options = {}) {
   if (options.reviewPanel) {
     options.reviewPanel.hidden = review.length === 0;
     options.reviewSummary.textContent = `確認が必要な候補（${review.length}件）`;
-    options.reviewContainer.innerHTML = review.map(renderCard).join('');
+    options.reviewContainer.innerHTML = review.map(row => renderCard(row)).join('');
   }
 }
 
-function renderCard(row) {
+function renderProductGroup(group) {
+  // 同一商品と確認できないものは、価格の安い海外版や複数BOXと混ぜない。
+  if (!group.comparable) return `<section class="individualOffer"><div class="help">同一BOXと確認できないため個別表示</div>${renderCard(group.rows[0])}</section>`;
+  return `<section class="productGroup" aria-label="${escapeAttr(group.name)}の店舗比較">
+    <div class="groupHeader"><h2>${escapeHtml(group.name)} <span class="unitBadge">日本語版1BOX</span></h2>
+      <div class="groupSummary"><span>${group.storeCount}店・${group.rows.length}件／在庫あり ${group.availableStores}店</span>
+        <strong>${group.availableMinPrice == null ? '在庫ありの掲載なし' : `表示中・在庫あり最安 ${formatPrice(group.availableMinPrice)}`}</strong></div>
+      <div class="help">表示中の最安 ${formatPrice(group.minPrice)}（売切・予約を含む）／BOX基準 ${formatPrice(group.referencePrice)}<br>商品価格・送料別。外装や受取条件は店ごとに確認してください。</div>
+    </div>
+    <div class="groupOffers">${group.rows.map(row => renderCard(row, true)).join('')}</div>
+  </section>`;
+}
+
+function renderCard(row, compact = false) {
   const reasons = [];
   if (!row.detailChecked) reasons.push(row.reviewReason || '商品詳細は未確認');
   if (row.price == null) reasons.push('価格不明');
@@ -83,16 +101,19 @@ function renderCard(row) {
   if (row.kind === 'unknown') reasons.push('販売単位不明');
   const time = row.searchedAt && !Number.isNaN(Date.parse(row.searchedAt))
     ? new Date(row.searchedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '';
-  return `<article class="result" data-kind="${escapeAttr(row.kind)}">
+  const conditions = compact ? comparisonConditions(row) : row.conditions;
+  return `<article class="result${compact ? ' comparisonOffer' : ''}" data-kind="${escapeAttr(row.kind)}">
     <div class="storeInfo"><div class="store">${escapeHtml(row.storeName)}</div></div>
     <div class="title"><span class="unitBadge">${KIND_LABELS[row.kind] || KIND_LABELS.unknown}</span>
+      ${compact ? '<details class="offerTitle"><summary>元の商品名・確認情報</summary>' : ''}
       <a href="${escapeAttr(row.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.title)}</a>
       <div class="checked">${escapeHtml(reasons.join('・') || `${time ? time + ' ' : ''}商品ページで確認`)}</div>
+      ${compact ? '</details>' : ''}
     </div>
     <div class="priceCell"><div class="price">${formatPrice(row.price)}</div>${renderComparison(row)}<div class="checked">送料別・送料未確認</div></div>
     <div class="stockCell">${stockBadge(row.stock, row.stockQty)}</div>
     <a class="open" href="${escapeAttr(row.url)}" target="_blank" rel="noopener noreferrer">商品ページ ↗</a>
-    ${row.conditions?.length ? `<div class="conditions">${escapeHtml(row.conditions.join('・'))}</div>` : ''}
+    ${conditions?.length ? `<div class="conditions">${escapeHtml(conditions.join('・'))}</div>` : ''}
   </article>`;
 }
 

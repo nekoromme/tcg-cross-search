@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow">
   <title>TCG横断在庫検索</title>
-  <link rel="stylesheet" href="/styles.css?v=0.4.3">
+  <link rel="stylesheet" href="/styles.css?v=0.5.0">
 </head>
 <body>
   <main class="wrap">
@@ -28,6 +28,9 @@
         <details id="searchSettings" class="searchSettings">
           <summary>検索・表示の設定</summary>
           <div class="displayOptions">
+            <label for="resultView">結果の見せ方
+              <select id="resultView"><option value="grouped">商品ごとに店舗比較</option><option value="list">すべてを一覧表示</option></select>
+            </label>
             <label for="unitFilter">販売単位
               <select id="unitFilter"><option value="box">BOXのみ</option><option value="sealed">BOX＋カートン・セット</option><option value="all">パックなども含める</option></select>
             </label>
@@ -37,6 +40,7 @@
             <label class="stockFilter"><input id="inStockOnly" type="checkbox"> 在庫ありのみ</label>
             <label class="stockFilter"><input id="includePreorders" type="checkbox" checked> 予約も表示</label>
           </div>
+          <p class="help">商品ごとの表示は、同じ日本語版1BOXと確認できたものだけをまとめます。並び順は各グループの先頭の掲載を基準にします。</p>
           <details class="priceSettings" open>
             <summary>価格の条件</summary>
             <div class="displayOptions">
@@ -90,6 +94,6 @@
       <div id="catalogList" class="catalogList"></div>
     </details>
   </main>
-  <script type="module" src="/app.js?v=0.4.3"></script>
+  <script type="module" src="/app.js?v=0.5.0"></script>
 </body>
 </html>
