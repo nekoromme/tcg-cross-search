@@ -42,6 +42,44 @@ test('aliases match the same box without merging similar or ambiguous codes', ()
   assert.deepEqual(searchTerms('スティールレクイエム'), ['GD03','Steel Requiem']);
 });
 
+test('expanded catalog distinguishes parallel Pokemon releases and manga booster numbers', () => {
+  for (const [code, name, price] of [
+    ['M1L','メガブレイブ',5400], ['M1S','メガシンフォニア',5400], ['M2','インフェルノX',5400],
+    ['SV9','バトルパートナーズ',5400], ['SV9a','熱風のアリーナ',5400], ['SV10','ロケット団の栄光',5400],
+    ['OP-11','神速の拳',5280], ['OP-12','師弟の絆',5280], ['OP-13','受け継がれる意志',5280], ['OP-14','蒼海の七傑',5280],
+    ['SB01','MANGA BOOSTER 01',7920], ['SB02','MANGA BOOSTER 02',7920],
+  ]) {
+    assert.equal(identifyProduct(code)?.name, name, code);
+    assert.ok(matchesQuery(`${name} BOX`, code));
+    const comparison = comparePrice({title:`${name} BOX`, price, detailChecked:true});
+    assert.equal(comparison.status, 'known', name);
+    assert.equal(comparison.difference, 0);
+    assert.equal(comparison.checkedAt, '2026-09-08');
+  }
+  for (const [wanted, other] of [['M1L','M1S'], ['M2','M2a'], ['SV9','SV9a'], ['SB01','SB02']])
+    assert.equal(matchesQuery(`${other} BOX`, wanted), false);
+  assert.equal(identifyProduct('メガブレイブ メガシンフォニア BOXセット'), null);
+  assert.deepEqual(searchTerms('SV9a'), ['熱風のアリーナ']);
+  assert.deepEqual(searchTerms('マンガブースター01'), ['SB01','MANGA BOOSTER 01']);
+  assert.equal(identifyProduct('GD05').checkedAt, '2026-09-07', '既存商品は再確認したことにしない');
+});
+
+test('special Pokemon sets are hidden from BOX results and never use booster MSRP', () => {
+  const titles = ['デッキビルドＢＯＸ バトルパートナーズ', 'メガブレイブ ポケモンセンターセット',
+    'メガシンフォニア ポケセンセット BOX', 'ロケット団の栄光 アタッシュケースセット',
+    'バトルパートナーズ プレミアムトレーナーボックス'];
+  for (const title of titles) {
+    assert.equal(productKind(title), 'special', title);
+    // 旧レスポンスがBOXと判定していても通常BOXの定価を当てない。
+    assert.equal(comparePrice({title,kind:'box',price:4200,detailChecked:true}).status, 'unknown');
+    const data = results([{title,kind:'box',price:4200}]);
+    assert.equal(selectRows(data).main.length, 0);
+    assert.equal(selectRows(data,{unit:'sealed'}).main[0].kind, 'special');
+  }
+  assert.equal(productKind('GD03 BOX プロモパック付き'), 'box');
+  assert.equal(comparePrice({title:'バトルパートナーズ 拡張パック BOX',price:5400,detailChecked:true}).status, 'known');
+});
+
 test('hyphenated booster codes survive while individual card numbers do not', () => {
   const html = '<a href="/product/1">ワンピース OP-17 BOX</a><p>5760円 在庫あり</p>' +
     '<a href="/product/2">OP17-001 SR BOX購入特典</a><p>500円 在庫あり</p>';
