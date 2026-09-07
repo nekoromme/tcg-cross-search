@@ -44,6 +44,9 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
       }
     }
     if (!title) title = cleanText(parseAttributes(`<a ${attrsText}>`).title || '');
+    const anchorText = title;
+    // カード全体がリンクの店では、価格・在庫まで商品名に含まれている。
+    title = title.replace(/\s+(?:販売価格\s*[:：]?\s*)?(?:[￥¥]\s*)?[\d,]+\s*円[\s\S]*$/, '').trim();
 
     // 次の商品リンクに達したら切る。隣の商品の価格・在庫を混ぜない。
     const tail = html.slice(anchorRe.lastIndex, anchorRe.lastIndex + 1800);
@@ -62,7 +65,7 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     const singleCard = looksLikeSingleCard(title);
     if (sealedOnly) {
       if (junkTitle) continue;
-      if (!sealedTitle && singleCard) continue;
+      if (singleCard) continue;
       if (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(title)) continue;
     }
 
@@ -80,8 +83,8 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     if (singleCard) score -= 30;
     if (junkTitle) score -= 50;
 
-    const price = extractPrice(context);
-    const stockInfo = extractStock(context);
+    const price = extractPrice(anchorText.slice(title.length)) ?? extractPrice(context);
+    const stockInfo = extractStock(anchorText === title ? context : anchorText);
     if (sealedOnly && price != null && price < 500 && !/パック(?!入り)/.test(title)) score -= 10;
 
     const candidate = {

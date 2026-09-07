@@ -113,3 +113,19 @@ test('API revalidates details and never fills unknown stock from listing guesses
     assert.equal(data.results[0].price, 5808);
   } finally { globalThis.fetch = previous; }
 });
+
+test('individual cards are excluded even when their source is a custom deck BOX', () => {
+  const names = ['ガンダム・瑞白星(第2形態)[GCG_GD03-055_R(2)] 【カスタムデッキボックス Freedom Ascension【SC01】収録】',
+    'ホタルビ[GCG_ GD03 -129_U(2)] 【カスタムデッキボックス収録】'];
+  const html = names.map((title, n) => `<a href="/product/${n}">${title}</a><span>100円 在庫あり</span>`).join('') +
+    '<a href="/product/99">GD03 BOX</a><span>5808円 在庫あり</span>';
+  assert.deepEqual(findCandidateProducts(html, 'https://shop.test/', 'GD03', true, 8, true).map(x => x.url), ['https://shop.test/product/99']);
+});
+
+test('whole-card links keep their own price but strip price and stock from title', () => {
+  const html = '<a href="/product/1">ロルカナ 1BOX 2,500円 (税込) 希望小売価格 : 5,280円 在庫なし</a>';
+  const result = findCandidateProducts(html, 'https://shop.test/', 'ロルカナ', true, 8)[0];
+  assert.equal(result.title, 'ロルカナ 1BOX');
+  assert.equal(result.price, 2500);
+  assert.equal(result.stock, 'out_of_stock');
+});
