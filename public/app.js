@@ -1,4 +1,4 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.4.3';
+import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.5.0';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 
 const els = {
@@ -8,6 +8,7 @@ const els = {
   searchSettings: document.querySelector('#searchSettings'),
   unitFilter: document.querySelector('#unitFilter'),
   sortOrder: document.querySelector('#sortOrder'),
+  resultView: document.querySelector('#resultView'),
   reviewPanel: document.querySelector('#reviewPanel'),
   reviewSummary: document.querySelector('#reviewSummary'),
   reviewContainer: document.querySelector('#reviewResults'),
@@ -41,6 +42,7 @@ async function init() {
   try {
     const saved = JSON.parse(localStorage.getItem('tcg-display-options') || '{}');
     if (['box', 'sealed', 'all'].includes(saved.unit)) els.unitFilter.value = saved.unit;
+    if (['grouped', 'list'].includes(saved.view)) els.resultView.value = saved.view;
     if (['price_asc', 'price_desc', 'stock', 'store', 'discount'].includes(saved.sort)) els.sortOrder.value = saved.sort;
     els.inStockOnly.checked = saved.inStockOnly === true;
     if (['100','105','110','all'].includes(saved.priceLimit)) els.priceLimit.value = saved.priceLimit;
@@ -70,7 +72,7 @@ els.form.addEventListener('submit', (event) => {
   startSearch();
 });
 // 並び替え・表示の変更は取得済みの結果だけで行い、店へ再アクセスしない。
-for (const control of [els.unitFilter, els.sortOrder, els.inStockOnly, els.priceLimit, els.maxPrice, els.includeUnknown, els.includePreorders, els.gameFilter]) {
+for (const control of [els.resultView, els.unitFilter, els.sortOrder, els.inStockOnly, els.priceLimit, els.maxPrice, els.includeUnknown, els.includePreorders, els.gameFilter]) {
   control.addEventListener(control === els.maxPrice ? 'input' : 'change', () => {
     try { localStorage.setItem('tcg-display-options', JSON.stringify(displayOptions())); } catch {}
     updateResults();
@@ -79,7 +81,7 @@ for (const control of [els.unitFilter, els.sortOrder, els.inStockOnly, els.price
 }
 
 function displayOptions() {
-  return { unit: els.unitFilter.value, sort: els.sortOrder.value, inStockOnly: els.inStockOnly.checked,
+  return { view: els.resultView.value, unit: els.unitFilter.value, sort: els.sortOrder.value, inStockOnly: els.inStockOnly.checked,
     priceLimit: els.priceLimit.value, maxPrice: Number(els.maxPrice.value) || null,
     includeUnknown: els.includeUnknown.checked, includePreorders: els.includePreorders.checked, game: els.gameFilter.value };
 }
@@ -131,7 +133,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.4.3',
+          v: '0.5.0',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
