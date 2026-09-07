@@ -114,9 +114,21 @@ export function renderStatuses(container, stores, storeResults, searching) {
     const labels = { ok: '候補あり', no_hit: '候補を抽出できず', blocked: '取得拒否', error: 'エラー' };
     const label = labels[result.status] || result.status || '不明';
     const c = result.coverage;
-    const message = [result.error, result.results?.length ? `${result.results.length}候補` : '', c ? `${c.pagesRead}ページ・詳細${c.detailChecks}件確認` : '', ...(c?.partialReasons || [])].filter(Boolean).join('／');
+    const message = [result.error, result.results?.length ? `${result.results.length}候補` : '', c ? `${c.pagesRead}ページ・詳細${c.detailChecks}件確認` : '',
+      describeSearchEvidence(result), c?.fallback === 'box_keyword' ? 'BOXで絞り込む補助検索を実施' : '', ...(c?.partialReasons || [])].filter(Boolean).join('／');
     return statusRow(store, label, message, result.manualSearchUrl || store.home);
   }).join('');
+}
+
+export function describeSearchEvidence(result) {
+  if (result.status !== 'no_hit') return '';
+  const c = result.coverage, evidence = c?.listing;
+  if (!evidence) return '';
+  if (c.candidateCount > 0) return '商品詳細を確認した結果、検索条件に合う候補なし';
+  if (evidence.excludedSingles > 0) return '確認した範囲ではシングル等を除外し、BOX候補なし';
+  if (evidence.excludedOther > 0) return '確認した範囲では用品等を除外し、BOX候補なし';
+  if (evidence.productLinks > 0) return '商品リンクを読み取ったが、検索語に一致する候補なし';
+  return '商品リンクを読み取れず。検索結果なし・ページ構造の違いは手動確認';
 }
 
 function statusRow(store, label, message, manualUrl) {

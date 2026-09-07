@@ -58,6 +58,7 @@ export const STORES = [
   },
   {
     id: 'tcgacademy',
+    boxKeywordFallback: true,
     name: 'マスターズスクウェア1号店',
     home: 'https://www.tcgacademy.com/',
     action: 'https://www.tcgacademy.com/product-list',
@@ -92,6 +93,7 @@ export const STORES = [
   },
   {
     id: 'tier1_op',
+    boxKeywordFallback: true,
     games: ['onepiece'],
     name: 'ティアワン ワンピース',
     home: 'https://tier-one-onepiece.jp/',
@@ -101,6 +103,7 @@ export const STORES = [
   },
   {
     id: 'masters_gundam',
+    boxKeywordFallback: true,
     name: 'マスターズスクウェア ガンダム',
     home: 'https://www.masters-square.com/',
     action: 'https://www.masters-square.com/product-list',
@@ -117,6 +120,7 @@ export const STORES = [
   },
   {
     id: 'tier1_gundam',
+    boxKeywordFallback: true,
     games: ['gundam'],
     name: 'ティアワン ガンダム',
     home: 'https://tier-one.jp/',
