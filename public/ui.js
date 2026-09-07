@@ -1,4 +1,5 @@
 import { productKind, KIND_LABELS } from './product-kind.js';
+import { comparePrice, withinPriceLimit, explicitGame, identifyProduct } from './catalog.js';
 
 // 取得順に左右されない並び替え。同価格のときは店名・商品URLで安定させる。
 export function flattenRows(storeResults, sort = 'price_asc') {
@@ -9,14 +10,19 @@ export function flattenRows(storeResults, sort = 'price_asc') {
       const key = `${result.store.id}:${item.url}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      rows.push({ ...item, kind: item.kind || productKind(item.title),
+      rows.push({ ...item, comparison: comparePrice(item), kind: item.kind || productKind(item.title),
         price: Number.isFinite(item.price) && item.price > 0 ? item.price : null,
         storeId: result.store.id, storeName: result.store.name, storeNote: result.store.note || '',
         searchedAt: result.searchedAt });
     }
   }
-  const stockOrder = { in_stock: 0, unknown: 1, out_of_stock: 2 };
+  const stockOrder = { in_stock: 0, preorder: 1, unknown: 2, out_of_stock: 3 };
   return rows.sort((a, b) => {
+    if (sort === 'discount') {
+      const av = a.comparison.status === 'known' ? a.comparison.percent : Infinity;
+      const bv = b.comparison.status === 'known' ? b.comparison.percent : Infinity;
+      if (av !== bv) return av - bv;
+    }
     if (sort === 'stock' && a.stock !== b.stock) return (stockOrder[a.stock] ?? 1) - (stockOrder[b.stock] ?? 1);
     if (sort === 'store') {
       const byStore = a.storeName.localeCompare(b.storeName, 'ja');
@@ -30,28 +36,37 @@ export function flattenRows(storeResults, sort = 'price_asc') {
 }
 
 export function selectRows(storeResults, options = {}) {
-  const { unit = 'box', sort = 'price_asc', inStockOnly = false } = options;
+  const { unit = 'box', sort = 'price_asc', inStockOnly = false, priceLimit = 'all', includeUnknown = true,
+    maxPrice = null, includePreorders = true, game = '' } = options;
   const rows = flattenRows(storeResults, sort);
   const main = [], review = [];
   let hidden = 0;
+  let priceHidden = 0, priceUnknown = 0;
   for (const row of rows) {
+    const identifiedGame = explicitGame(row.title) || identifyProduct(row.title)?.game;
+    if (game && identifiedGame && identifiedGame !== game) { hidden++; continue; }
     if ((unit === 'box' && ['carton', 'bundle', 'pack'].includes(row.kind)) ||
         (unit === 'sealed' && row.kind === 'pack') ||
+        (!includePreorders && row.stock === 'preorder') ||
         (inStockOnly && row.stock !== 'in_stock')) { hidden++; continue; }
+    const comp = row.comparison;
+    if (comp.status !== 'known') priceUnknown++;
+    if ((comp.status !== 'known' && !includeUnknown) || (priceLimit !== 'all' && comp.status === 'known' && !withinPriceLimit(row, comp, Number(priceLimit)))) { hidden++; priceHidden++; continue; }
+    if (maxPrice > 0 && (row.price == null || row.price > maxPrice)) { hidden++; priceHidden++; continue; }
     if (!row.detailChecked || row.price == null || row.stock === 'unknown' || row.kind === 'unknown') review.push(row);
     else main.push(row);
   }
-  return { main, review, hidden };
+  return { main, review, hidden, priceHidden, priceUnknown };
 }
 
 export function renderRows(container, countEl, storeResults, options = {}) {
-  const { main, review, hidden } = selectRows(storeResults, options);
-  countEl.textContent = `${main.length}件表示${review.length ? `・要確認${review.length}件` : ''}${hidden ? `・条件で非表示${hidden}件` : ''}`;
+  const { main, review, hidden, priceHidden } = selectRows(storeResults, options);
+  countEl.textContent = `${main.length}件表示${review.length ? `・要確認${review.length}件` : ''}${hidden ? `・非表示${hidden}件（価格条件${priceHidden}件）` : ''}`;
   container.innerHTML = main.length ? main.map(renderCard).join('') : `<div class="empty">${options.searching
     ? '条件に合う商品を探しています…'
     : !options.hasSearched ? '商品名・型番を入力して検索してください。'
     : review.length ? '確実に比較できる商品はありません。「確認が必要な候補」を開いて確認できます。'
-    : hidden ? '表示条件に合う商品はありません。販売単位や在庫の条件を変更できます。'
+    : hidden ? '表示条件に合う商品はありません。価格・販売単位・在庫の条件を変更できます。'
     : '候補を抽出できませんでした。短い商品名や型番で再検索するか、下の店内検索リンクから確認できます。'}</div>`;
   if (options.reviewPanel) {
     options.reviewPanel.hidden = review.length === 0;
@@ -74,10 +89,18 @@ function renderCard(row) {
       <a href="${escapeAttr(row.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.title)}</a>
       <div class="checked">${escapeHtml(reasons.join('・') || `${time ? time + ' ' : ''}商品ページで確認`)}</div>
     </div>
-    <div class="price">${formatPrice(row.price)}</div>
+    <div class="priceCell"><div class="price">${formatPrice(row.price)}</div>${renderComparison(row)}<div class="checked">送料別・送料未確認</div></div>
     <div class="stockCell">${stockBadge(row.stock, row.stockQty)}</div>
     <a class="open" href="${escapeAttr(row.url)}" target="_blank" rel="noopener noreferrer">商品ページ ↗</a>
+    ${row.conditions?.length ? `<div class="conditions">${escapeHtml(row.conditions.join('・'))}</div>` : ''}
   </article>`;
+}
+
+function renderComparison(row) {
+  const c = row.comparison || comparePrice(row);
+  if (c.status !== 'known') return `<div class="priceComparison muted" title="${escapeAttr(c.reason)}">定価未確認</div>`;
+  const delta = c.difference === 0 ? '定価と同じ' : `${c.difference > 0 ? '+' : '−'}${Math.abs(c.difference).toLocaleString('ja-JP')}円（${c.percent > 0 ? '+' : ''}${c.percent.toFixed(1)}%）`;
+  return `<div class="priceComparison ${c.difference > 0 ? 'above' : 'below'}">${escapeHtml(delta)}</div><details class="priceSource"><summary>BOX基準 ${formatPrice(c.referencePrice)}</summary><div>税込・${c.basis === 'official_box' ? '公式BOX価格' : 'パック定価×確認済み入数'}<br>確認日 ${escapeHtml(c.checkedAt)}</div>${(c.sources || []).map(s => `<a href="${escapeAttr(s.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.label)} ↗</a>`).join('<br>')}</details>`;
 }
 
 export function renderStatuses(container, stores, storeResults, searching) {
@@ -90,7 +113,8 @@ export function renderStatuses(container, stores, storeResults, searching) {
     if (!result) return statusRow(store, searching ? '待機' : '未検索', '', store.home);
     const labels = { ok: '候補あり', no_hit: '候補を抽出できず', blocked: '取得拒否', error: 'エラー' };
     const label = labels[result.status] || result.status || '不明';
-    const message = result.error || (result.results?.length ? `${result.results.length}件` : '');
+    const c = result.coverage;
+    const message = [result.error, result.results?.length ? `${result.results.length}候補` : '', c ? `${c.pagesRead}ページ・詳細${c.detailChecks}件確認` : '', ...(c?.partialReasons || [])].filter(Boolean).join('／');
     return statusRow(store, label, message, result.manualSearchUrl || store.home);
   }).join('');
 }
@@ -107,6 +131,7 @@ function statusRow(store, label, message, manualUrl) {
 }
 
 function stockBadge(stock, qty) {
+  if (stock === 'preorder') return '<span class="stock unknown">予約受付</span>';
   if (stock === 'in_stock') return `<span class="stock in_stock">在庫あり${qty != null ? ` ${qty}` : ''}</span>`;
   if (stock === 'out_of_stock') return '<span class="stock out_of_stock">在庫なし</span>';
   return '<span class="stock unknown">在庫不明</span>';

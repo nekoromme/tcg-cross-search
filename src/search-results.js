@@ -12,14 +12,15 @@ import {
   normalizeText,
   normalizeUrlKey,
   parseAttributes,
-  textMatchesQuery,
 } from './search-common.js';
 import { productKind } from '../public/product-kind.js';
+import { createQueryMatcher } from '../public/catalog.js';
 
 export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, limit = 2, preferBoxes = false) {
   if (!html) return [];
   const queryNorm = normalizeText(query);
   const tokens = makeQueryTokens(query);
+  const matchesQuery = createQueryMatcher(query);
   const anchorRe = /<a\b([^>]*?)href\s*=\s*["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi;
   const byUrl = new Map();
   let match;
@@ -48,6 +49,12 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     // カード全体がリンクの店では、価格・在庫まで商品名に含まれている。
     title = title.replace(/\s+(?:販売価格\s*[:：]?\s*)?(?:[￥¥]\s*)?[\d,]+\s*円[\s\S]*$/, '').trim();
 
+    const sealedTitle = isSealedTitle(title);
+    const junkTitle = isJunkTitle(title);
+    const singleCard = looksLikeSingleCard(title);
+    if (sealedOnly && (junkTitle || singleCard || (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(title)))) continue;
+    if (!matchesQuery(title)) continue;
+
     // 次の商品リンクに達したら切る。隣の商品の価格・在庫を混ぜない。
     const tail = html.slice(anchorRe.lastIndex, anchorRe.lastIndex + 1800);
     const nextProduct = [...tail.matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi)]
@@ -58,16 +65,6 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
     const context = cleanText(tail.slice(0, nextProduct?.index ?? tail.length));
     const titleNorm = normalizeText(title);
     const contextNorm = normalizeText(context);
-    if (!textMatchesQuery(titleNorm, contextNorm, queryNorm, tokens)) continue;
-
-    const sealedTitle = isSealedTitle(title);
-    const junkTitle = isJunkTitle(title);
-    const singleCard = looksLikeSingleCard(title);
-    if (sealedOnly) {
-      if (junkTitle) continue;
-      if (singleCard) continue;
-      if (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(title)) continue;
-    }
 
     let score = 0;
     if (queryNorm.length >= 2 && titleNorm.includes(queryNorm)) score += 35;

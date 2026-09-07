@@ -17,6 +17,7 @@ export const STORES = [
   },
   {
     id: 'hatti_xross',
+    games: [],
     name: 'はっち XrossStars',
     home: 'https://www.hatti-xrossstars.jp/',
     action: 'https://www.hatti-xrossstars.jp/product-list',
@@ -65,6 +66,7 @@ export const STORES = [
   },
   {
     id: 'square3rd',
+    games: ['lorcana'],
     name: 'マスターズスクウェア3号店',
     home: 'https://www.square-3rd.jp/',
     action: 'https://www.square-3rd.jp/product-list',
@@ -73,6 +75,7 @@ export const STORES = [
   },
   {
     id: 'square_bushiroad',
+    games: [],
     name: 'マスターズスクウェア ブシロード店',
     home: 'https://www.square-bushiroad.com/',
     action: 'https://www.square-bushiroad.com/product-list',
@@ -89,6 +92,7 @@ export const STORES = [
   },
   {
     id: 'tier1_op',
+    games: ['onepiece'],
     name: 'ティアワン ワンピース',
     home: 'https://tier-one-onepiece.jp/',
     action: 'https://tier-one-onepiece.jp/view/search',
@@ -113,6 +117,7 @@ export const STORES = [
   },
   {
     id: 'tier1_gundam',
+    games: ['gundam'],
     name: 'ティアワン ガンダム',
     home: 'https://tier-one.jp/',
     action: 'https://tier-one.jp/view/search',

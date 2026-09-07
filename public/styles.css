@@ -133,6 +133,21 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .title { min-width: 0; overflow-wrap: anywhere; }
 .chip { color: var(--text); }
 .help { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.displayOptions input[type="number"] { min-height: 44px; width: 100%; max-width: 180px; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.priceSettings { padding: 4px 0 10px; }
+.priceSettings summary { cursor: pointer; margin-bottom: 12px; font-size: 14px; font-weight: 700; }
+.priceComparison { font-size: 12px; margin: 4px 0; }
+.priceComparison.below { color: var(--good); }
+.priceComparison.above { color: var(--warn); }
+.priceSource { font-size: 11px; color: var(--muted); line-height: 1.7; }
+.priceSource summary { cursor: pointer; }
+.priceCell { min-width: 0; }
+.conditions { grid-column: 1 / -1; color: var(--warn); font-size: 12px; }
+.catalogList h3 { font-size: 15px; margin-bottom: 8px; }
+.catalogProduct { display: block; width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); text-align: left; font-size: 13px; min-height: 44px; margin-bottom: 6px; padding: 10px; font-weight: 500; }
+.muted { color: var(--muted); }
+.searchOptions select { width: 100%; }
+@media (min-width: 781px) { .result { grid-template-columns: minmax(130px,.75fr) minmax(220px,2fr) minmax(145px,1fr) auto auto; } }
 [hidden] { display: none !important; }
 @media (max-width: 780px) {
   .result .storeInfo { grid-column: 1 / -1; }
