@@ -180,7 +180,7 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .groupOffers { display: grid; }
 .comparisonOffer { border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none;
   grid-template-columns: minmax(150px, 1fr) minmax(145px, auto) auto auto;
-  grid-template-areas: "store price stock open" "conditions conditions conditions conditions" "title title title title";
+  grid-template-areas: "store price stock open" "conditions price stock open" "title price stock open";
   gap: 6px 12px; }
 .comparisonOffer .storeInfo { grid-area: store; min-width: 0; overflow-wrap: anywhere; }
 .comparisonOffer .priceCell { grid-area: price; }
@@ -196,7 +196,7 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .individualOffer > .help { margin: 4px 0; font-size: 12px; }
 @media (max-width: 780px) {
   .comparisonOffer { grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "store store" "price stock" "conditions conditions" "open open" "title title"; }
+    grid-template-areas: "store store" "price stock" "conditions conditions" "title open"; }
   .comparisonOffer .open { min-height: 36px; display: flex; align-items: center; }
   .groupSummary { flex-direction: column; }
 }
