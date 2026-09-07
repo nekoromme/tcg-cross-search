@@ -19,11 +19,10 @@ export function makeQueryTokens(query) {
 }
 
 export function textMatchesQuery(titleNorm, contextNorm, queryNorm, tokens) {
-  if (queryNorm && (titleNorm.includes(queryNorm) || contextNorm.includes(queryNorm))) return true;
+  // 周辺の商品名や「検索語」の見出しは証拠にしない。複数語はすべて一致。
+  if (queryNorm && titleNorm.includes(queryNorm)) return true;
   if (!tokens.length) return false;
-  let hits = 0;
-  for (const token of tokens) if (titleNorm.includes(token) || contextNorm.includes(token)) hits += 1;
-  return hits >= Math.max(1, Math.ceil(tokens.length * 0.6));
+  return tokens.every((token) => titleNorm.includes(token));
 }
 
 export function isSealedTitle(title) {
@@ -37,7 +36,7 @@ export function isBoxOrCartonTitle(title) {
 }
 
 export function isJunkTitle(title) {
-  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ|プラモデル|デカール|中古/i.test(String(title || ''));
+  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ|プラモデル|デカール|中古|スリーブ|プレイマット|デッキケース|ストレージ|空箱|空き箱|店頭受取専用|店頭販売のみ/i.test(String(title || ''));
 }
 
 export function looksLikeSingleCard(title) {

@@ -1,7 +1,9 @@
 import { STORE_MAP, STORES, buildStoreSearchUrl } from './stores.js';
 import { findCandidateProducts, parseProductDetail, sanitizeQuery } from './search.js';
+import { isJunkTitle, looksLikeSingleCard, makeQueryTokens, normalizeText, textMatchesQuery } from './search-common.js';
+import { productKind } from '../public/product-kind.js';
 
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.3.0';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 12_000;
@@ -9,7 +11,7 @@ const SEARCH_HTML_MAX_BYTES = 1_500_000;
 const DETAIL_HTML_MAX_BYTES = 900_000;
 
 const HTTP_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.2.1; +https://github.com/nekoromme/tcg-cross-search)',
+  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.3.0; +https://github.com/nekoromme/tcg-cross-search)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ja,en-US;q=0.8,en;q=0.6',
 };
@@ -86,31 +88,45 @@ async function handleStoreSearch(request) {
         searchResponse.finalUrl || manualSearchUrl,
         query,
         sealedOnly,
-        2,
+        8,
+        true,
       );
+      // BOXを先に確保してから詳細確認。カートンが候補枠を独占しない。
+      candidates.sort((a, b) => Number(b.kind === 'box') - Number(a.kind === 'box') || b.score - a.score);
+      const selected = candidates.slice(0, 8);
+      baseResult.candidateLimit = 8;
 
       if (!candidates.length) {
         baseResult.status = 'no_hit';
       } else {
         baseResult.results = await Promise.all(
-          candidates.map(async (candidate) => {
+          selected.map(async (candidate, index) => {
+            // 一度に外へ接続しすぎないよう、詳細は最大4件。残りは要確認欄へ。
+            if (index >= 4) return { ...candidate, reviewReason: '商品詳細は未確認' };
             try {
               const detailResponse = await fetchHtml(candidate.url, DETAIL_HTML_MAX_BYTES);
-              if (detailResponse.status < 200 || detailResponse.status >= 400) return candidate;
+              if (detailResponse.status < 200 || detailResponse.status >= 400) return { ...candidate, reviewReason: '商品詳細を取得できませんでした' };
               const refined = parseProductDetail(detailResponse.text);
+              // 詳細で別の商品・シングル・用品だと分かった候補は捨てる。
+              if (refined.title && (!textMatchesQuery(normalizeText(refined.title), '', normalizeText(query), makeQueryTokens(query))
+                || (sealedOnly && (isJunkTitle(refined.title) || looksLikeSingleCard(refined.title))))) return null;
               return {
                 ...candidate,
                 title: refined.title || candidate.title,
-                price: refined.price ?? candidate.price,
-                stock: refined.stock !== 'unknown' ? refined.stock : candidate.stock,
-                stockQty: refined.stockQty ?? candidate.stockQty,
-                detailChecked: true,
+                // 詳細で不明だった値を、一覧の隣の商品由来かもしれない値で補わない。
+                price: refined.price,
+                stock: refined.stock,
+                stockQty: refined.stockQty,
+                kind: productKind(refined.title || candidate.title),
+                detailChecked: Boolean(refined.title),
               };
             } catch {
-              return candidate;
+              return { ...candidate, reviewReason: '商品詳細を取得できませんでした' };
             }
           }),
         );
+        baseResult.results = baseResult.results.filter(Boolean);
+        if (!baseResult.results.length) baseResult.status = 'no_hit';
       }
     }
   } catch (error) {
