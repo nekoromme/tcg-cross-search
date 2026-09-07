@@ -70,7 +70,7 @@ els.form.addEventListener('submit', (event) => {
 });
 // 並び替え・表示の変更は取得済みの結果だけで行い、店へ再アクセスしない。
 for (const control of [els.unitFilter, els.sortOrder, els.inStockOnly, els.priceLimit, els.maxPrice, els.includeUnknown, els.includePreorders, els.gameFilter]) {
-  control.addEventListener('change', () => {
+  control.addEventListener(control === els.maxPrice ? 'input' : 'change', () => {
     try { localStorage.setItem('tcg-display-options', JSON.stringify(displayOptions())); } catch {}
     updateResults();
     updateQueryHint();
