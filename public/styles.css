@@ -157,3 +157,15 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
   .displayOptions .stockFilter { grid-column: 1 / -1; }
   .price { font-size: 21px; }
 }
+
+/* 検索ボタンの直下は進捗と商品。補助設定は必要な時だけ開く。 */
+.searchSettings { margin: 0 0 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.searchSettings > summary { cursor: pointer; min-height: 44px; padding: 12px 0; font-size: 14px; font-weight: 700; }
+.searchSettings[open] { padding-bottom: 12px; }
+.searchSettings > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.searchStatus { display: grid; gap: 4px; margin-top: 12px; line-height: 1.5; }
+.searchStatus > span { min-height: 1.5em; overflow-wrap: anywhere; }
+#progress { color: var(--text); font-weight: 600; }
+/* 商品が届くたびにブラウザが結果の位置を追いかけるのを防ぐ。 */
+#results, #reviewPanel { overflow-anchor: none; }
+.displayOptions select { min-width: 0; width: 100%; }

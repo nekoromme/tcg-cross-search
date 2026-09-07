@@ -5,6 +5,7 @@ const els = {
   form: document.querySelector('#searchForm'),
   query: document.querySelector('#query'),
   searchButton: document.querySelector('#searchButton'),
+  searchSettings: document.querySelector('#searchSettings'),
   unitFilter: document.querySelector('#unitFilter'),
   sortOrder: document.querySelector('#sortOrder'),
   reviewPanel: document.querySelector('#reviewPanel'),
@@ -98,6 +99,10 @@ async function startSearch() {
   els.gameFilter.disabled = true;
   els.searchDepth.disabled = true;
 
+  // 設定を閉じ、スマホのキーボードも閉じる。結果へ自動スクロールはしない。
+  // 履歴が増えても閉じた設定内なので、検索ボタンの下を押し下げない。
+  els.searchSettings.open = false;
+  if (document.activeElement === els.query) els.query.blur();
   saveHistory(query);
   refreshHistory();
   storeResults = new Map();
@@ -108,8 +113,8 @@ async function startSearch() {
   const forceRefresh = els.forceRefresh.checked;
   const cacheBust = forceRefresh ? String(Date.now()) : '';
   els.searchButton.disabled = true;
+  els.searchButton.textContent = '検索中…';
   updateResults();
-  els.resultCount.textContent = '';
 
   let completed = 0;
   updateProgress(completed);
@@ -160,6 +165,7 @@ async function startSearch() {
   if (runId !== currentRun) return;
   searching = false;
   els.searchButton.disabled = false;
+  els.searchButton.textContent = '横断検索';
   els.gameFilter.disabled = false;
   els.searchDepth.disabled = false;
   els.forceRefresh.checked = false;
@@ -170,7 +176,7 @@ async function startSearch() {
 
 function updateProgress(completed, done = false) {
   const partial = [...storeResults.values()].filter(r => r.status !== 'ok' || r.coverage?.partialReasons?.length).length;
-  els.progress.textContent = done ? `${activeStores.length}売り場を検索。${partial ? `未確認の範囲がある店：${partial}店（店舗別状況へ）` : ''}` : `検索中 ${completed}/${activeStores.length}`;
+  els.progress.textContent = done ? `検索完了 ${completed}/${activeStores.length}${partial ? `・一部未確認 ${partial}店` : ''}` : `検索中 ${completed}/${activeStores.length}`;
 }
 
 function refreshHistory() {

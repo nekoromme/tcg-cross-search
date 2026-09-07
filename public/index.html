@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow">
   <title>TCG横断在庫検索</title>
-  <link rel="stylesheet" href="/styles.css?v=0.4.0">
+  <link rel="stylesheet" href="/styles.css?v=0.4.1">
 </head>
 <body>
   <main class="wrap">
@@ -25,44 +25,44 @@
             <select id="searchDepth"><option value="standard">通常（先頭ページ）</option><option value="wide">広く探す（最大3ページ）</option></select>
           </label>
         </div>
+        <details id="searchSettings" class="searchSettings">
+          <summary>検索・表示の設定</summary>
+          <div class="displayOptions">
+            <label for="unitFilter">販売単位
+              <select id="unitFilter"><option value="box">BOXのみ</option><option value="sealed">BOX＋カートン・セット</option><option value="all">パックなども含める</option></select>
+            </label>
+            <label for="sortOrder">並び順
+              <select id="sortOrder"><option value="price_asc">価格が安い順</option><option value="price_desc">価格が高い順</option><option value="discount">定価からの割引率順</option><option value="stock">在庫あり優先</option><option value="store">店名順</option></select>
+            </label>
+            <label class="stockFilter"><input id="inStockOnly" type="checkbox"> 在庫ありのみ</label>
+            <label class="stockFilter"><input id="includePreorders" type="checkbox" checked> 予約も表示</label>
+          </div>
+          <details class="priceSettings" open>
+            <summary>価格の条件</summary>
+            <div class="displayOptions">
+              <label for="priceLimit">BOX定価との比較<select id="priceLimit"><option value="105">定価＋5%以内</option><option value="100">定価以下</option><option value="110">定価＋10%以内</option><option value="all">制限なし</option></select></label>
+              <label for="maxPrice">商品価格の上限（円）<input id="maxPrice" type="number" inputmode="numeric" min="1" max="99999999" step="1" placeholder="指定なし"></label>
+              <label class="stockFilter"><input id="includeUnknown" type="checkbox" checked> 定価未確認の商品も表示</label>
+            </div>
+            <p class="help">日本語版1BOXの税込商品価格を比較。送料・ポイント・クーポンは含めません。定価不明を除くには上のチェックを外してください。</p>
+          </details>
+          <div class="options">
+            <label><input id="forceRefresh" type="checkbox"> 最新情報を取り直す</label>
+          </div>
+          <div id="history" class="history" aria-label="最近の検索"></div>
+          <div id="searchHint" class="help"></div>
+        </details>
         <div class="searchRow">
           <input id="query" type="search" autocomplete="off" enterkeyhint="search" maxlength="100"
                  aria-label="商品名・型番" placeholder="例：GD05 / ストームエメラルダ" list="catalogSuggestions" required>
           <datalist id="catalogSuggestions"></datalist>
           <button id="searchButton" type="submit">横断検索</button>
         </div>
-        <div class="options">
-          <label><input id="forceRefresh" type="checkbox"> 最新情報を取り直す</label>
+        <div id="searchStatus" class="summary searchStatus" role="status" aria-live="polite" aria-atomic="true">
+          <span id="progress">ショップ一覧を読み込み中…</span>
+          <span id="resultCount"></span>
         </div>
-        <div id="history" class="history" aria-label="最近の検索"></div>
-        <div id="searchHint" class="help"></div>
       </form>
-    </section>
-
-    <section class="panel compact">
-      <div class="displayOptions">
-        <label for="unitFilter">販売単位
-          <select id="unitFilter"><option value="box">BOXのみ</option><option value="sealed">BOX＋カートン・セット</option><option value="all">パックなども含める</option></select>
-        </label>
-        <label for="sortOrder">並び順
-          <select id="sortOrder"><option value="price_asc">価格が安い順</option><option value="price_desc">価格が高い順</option><option value="discount">定価からの割引率順</option><option value="stock">在庫あり優先</option><option value="store">店名順</option></select>
-        </label>
-        <label class="stockFilter"><input id="inStockOnly" type="checkbox"> 在庫ありのみ</label>
-        <label class="stockFilter"><input id="includePreorders" type="checkbox" checked> 予約も表示</label>
-      </div>
-      <details class="priceSettings" open>
-        <summary>価格の条件</summary>
-        <div class="displayOptions">
-          <label for="priceLimit">BOX定価との比較<select id="priceLimit"><option value="105">定価＋5%以内</option><option value="100">定価以下</option><option value="110">定価＋10%以内</option><option value="all">制限なし</option></select></label>
-          <label for="maxPrice">商品価格の上限（円）<input id="maxPrice" type="number" inputmode="numeric" min="1" max="99999999" step="1" placeholder="指定なし"></label>
-          <label class="stockFilter"><input id="includeUnknown" type="checkbox" checked> 定価未確認の商品も表示</label>
-        </div>
-        <p class="help">日本語版1BOXの税込商品価格を比較。送料・ポイント・クーポンは含めません。定価不明を除くには上のチェックを外してください。</p>
-      </details>
-      <div class="summary" aria-live="polite">
-        <span id="progress">ショップ一覧を読み込み中…</span>
-        <span id="resultCount"></span>
-      </div>
     </section>
 
     <section id="results" class="results">
@@ -76,12 +76,6 @@
     </details>
 
     <details class="panel diagnostics">
-      <summary id="catalogSummary">定価台帳の対応商品</summary>
-      <p class="help">公式価格と入数の確認が済んだ商品から追加しています。全ての過去商品を網羅していません。商品を選ぶと検索欄に入ります。</p>
-      <div id="catalogList" class="catalogList"></div>
-    </details>
-
-    <details class="panel diagnostics">
       <summary>店舗別の検索状況・店内検索リンク</summary>
       <div id="storeStatuses" class="statusList"></div>
     </details>
@@ -89,7 +83,13 @@
     <p class="foot">
       各店で入力した商品を検索し、最大8候補・詳細4件を確認します。「広く探す」では候補が少ない場合に検索結果を先頭から最大3ページ読みます。登録済みの商品は、候補がない時に別名で1回補助検索する場合があります。該当なしは店全体の在庫なしを意味しません。注文前に商品ページで価格・在庫・販売条件を確認してください。
     </p>
+
+    <details class="panel diagnostics">
+      <summary id="catalogSummary">定価台帳の対応商品</summary>
+      <p class="help">公式価格と入数の確認が済んだ商品から追加しています。全ての過去商品を網羅していません。商品を選ぶと検索欄に入ります。</p>
+      <div id="catalogList" class="catalogList"></div>
+    </details>
   </main>
-  <script type="module" src="/app.js?v=0.4.0"></script>
+  <script type="module" src="/app.js?v=0.4.1"></script>
 </body>
 </html>
