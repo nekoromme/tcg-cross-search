@@ -36,14 +36,14 @@ export function isBoxOrCartonTitle(title) {
 }
 
 export function isJunkTitle(title) {
-  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ|プラモデル|デカール|中古|スリーブ|デッキシールド|プレイマット|デッキケース|ストレージ|空箱|空き箱|店頭受取専用|店頭販売のみ/i.test(String(title || ''));
+  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ|プラモデル|デカール|中古|スリーブ|デッキシールド|プレイマット|デッキケース|デッキボックス|ストレージ|空箱|空き箱|店頭受取専用|店頭販売のみ/i.test(String(title || ''));
 }
 
 export function looksLikeSingleCard(title) {
   const text = String(title || '').normalize('NFKC');
   // 「カスタムデッキボックス収録」のシングルも個別カード番号で除外する。
   // 単語境界\bでは GCG_GD03-055_R のアンダースコアを見落とす。
-  if (/(?<![A-Z0-9])[A-Z]{1,5}\d{0,3}\s*[-_/]\s*\d{2,4}(?:[_-]?[A-Z][A-Z0-9]*)?(?![A-Z0-9])/i.test(text)) return true;
+  if (/(?<![A-Z0-9])[A-Z]{1,5}\d{1,3}\s*[-_/]\s*\d{2,4}(?:[_-]?[A-Z][A-Z0-9]*)?(?![A-Z0-9])/i.test(text)) return true;
   if (isSealedTitle(text)) return false;
   // GD03-118RP2 / GD03-050LRP / GD03-110UP+ もカード番号。
   // 番号末尾の英字を見落とすと「未開封」のプロモカードまでBOX扱いしてしまう。
@@ -83,18 +83,20 @@ export function parseMoney(value) {
 
 export function extractStock(text) {
   const value = String(text || '');
+  // 売切・受付終了は、ページに残っている購入ボタンの文言より優先する。
+  if (/在庫なし|売り切れ|売切れ|SOLD\s*OUT|完売|品切れ|予約(?:受付)?終了|受付は終了|現在、商品はございません/i.test(value)) return { stock: 'out_of_stock', qty: 0 };
   let match = value.match(/在庫(?:数)?\s*[:：]?\s*([0-9]+)\s*(?:点|個|BOX|箱)?/i);
   if (match) {
     const qty = Number(match[1]);
-    return { stock: qty > 0 ? 'in_stock' : 'out_of_stock', qty };
+    return { stock: qty > 0 ? (/予約受付中|予約商品|予約する/.test(value) ? 'preorder' : 'in_stock') : 'out_of_stock', qty };
   }
   match = value.match(/残り\s*([0-9]+)\s*(?:点|個|BOX|箱)?/i);
   if (match) {
     const qty = Number(match[1]);
-    return { stock: qty > 0 ? 'in_stock' : 'out_of_stock', qty };
+    return { stock: qty > 0 ? (/予約受付中|予約商品|予約する/.test(value) ? 'preorder' : 'in_stock') : 'out_of_stock', qty };
   }
-  if (/在庫なし|売り切れ|売切れ|SOLD\s*OUT|完売|品切れ|現在、商品はございません/i.test(value)) return { stock: 'out_of_stock', qty: 0 };
-  if (/在庫あり|カートに入れる|購入する|予約受付中|予約する/i.test(value)) return { stock: 'in_stock', qty: null };
+  if (/予約受付中|予約する/.test(value)) return { stock: 'preorder', qty: null };
+  if (/在庫あり|カートに入れる|購入する/i.test(value)) return { stock: 'in_stock', qty: null };
   return { stock: 'unknown', qty: null };
 }
 
