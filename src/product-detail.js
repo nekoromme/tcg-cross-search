@@ -1,4 +1,4 @@
-import { cleanText, decodeHtmlEntities, extractPrice, extractStock, parseMoney } from './search-common.js';
+import { cleanText, decodeHtmlEntities, extractPrice, extractStock, normalizeText, parseAttributes, parseMoney } from './search-common.js';
 
 export function parseProductDetail(html) {
   const out = { title: '', price: null, stock: 'unknown', stockQty: null };
@@ -37,7 +37,12 @@ export function parseProductDetail(html) {
     }
   }
 
-  const mainText = cleanText(extractMainProductRegion(html));
+  const productHeading = findProductHeading(html);
+  const mainText = cleanText(extractMainProductRegion(html, productHeading));
+  // 店名のh1より、商品名として指定された見出し・共有用の商品名を優先する。
+  // アドバンテージなどでは、商品名はh2#product_nameにある。
+  if (!out.title && productHeading) out.title = cleanText(productHeading[2]);
+  if (!out.title) out.title = getMetaContent(html, 'og:title');
   if (!out.title) {
     const h1 = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
     if (h1) out.title = cleanText(h1[1]);
@@ -54,11 +59,34 @@ export function parseProductDetail(html) {
   return out;
 }
 
-function extractMainProductRegion(html) {
+function extractMainProductRegion(html, productHeading) {
   const source = String(html || '');
-  const h1Index = source.search(/<h1\b/i);
-  if (h1Index >= 0) return source.slice(Math.max(0, h1Index - 8000), Math.min(source.length, h1Index + 45000));
+  // 商品名の直前にあるナビゲーションやカート内の在庫表記は読まない。
+  if (productHeading) return source.slice(productHeading.index, Math.min(source.length, productHeading.index + 45000));
   return source.slice(0, Math.min(source.length, 60000));
+}
+
+function getMetaContent(html, property) {
+  for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+    const attrs = parseAttributes(tag);
+    if (attrs.property === property || attrs.name === property) return cleanText(attrs.content || '');
+  }
+  return '';
+}
+
+function findProductHeading(html) {
+  const headings = [...html.matchAll(/<h[1-6]\b([^>]*)>([\s\S]*?)<\/h[1-6]>/gi)];
+  const named = headings.find((heading) => {
+    const attrs = parseAttributes(heading[1]);
+    return /(?:product|item)[_-](?:name|title)/i.test(`${attrs.id || ''} ${attrs.class || ''}`);
+  });
+  if (named) return named;
+  const metaTitle = normalizeText(getMetaContent(html, 'og:title'));
+  if (metaTitle) {
+    const matching = headings.find((heading) => normalizeText(cleanText(heading[2])) === metaTitle);
+    if (matching) return matching;
+  }
+  return headings.find((heading) => /^<h1\b/i.test(heading[0]));
 }
 
 function findProductJsonLd(obj) {

@@ -3,6 +3,7 @@ import {
   cleanText,
   extractPrice,
   extractStock,
+  isBoxOrCartonTitle,
   isJunkTitle,
   isLikelyProductUrl,
   isSealedTitle,
@@ -66,6 +67,7 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
       else if (contextNorm.includes(token)) score += 2;
     }
     if (sealedTitle) score += 25;
+    if (isBoxOrCartonTitle(title)) score += 25;
     if (/カートン/i.test(title)) score += 4;
     if (/新品|未開封/i.test(title)) score += 6;
     if (singleCard) score -= 30;

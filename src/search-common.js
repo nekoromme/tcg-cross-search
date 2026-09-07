@@ -30,18 +30,32 @@ export function isSealedTitle(title) {
   return /(?:\bbox\b|ボックス|カートン|\d+\s*BOX|ブースターパック|ブースター\s*BOX|パック\s*BOX|未開封BOX|新品商品|新品予約)/i.test(String(title || ''));
 }
 
+// 「ブースターパック」という商品名だけでは、1パックかBOXかは分からない。
+// 箱単位の表記がある商品を優先し、単品パックの安値がBOXより上に来るのを防ぐ。
+export function isBoxOrCartonTitle(title) {
+  return /(?:\bbox\b|\d+\s*BOX|未開封BOX|ボックス|カートン)/i.test(String(title || ''));
+}
+
 export function isJunkTitle(title) {
-  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ/i.test(String(title || ''));
+  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ|プラモデル|デカール|中古/i.test(String(title || ''));
 }
 
 export function looksLikeSingleCard(title) {
   const text = String(title || '');
   if (isSealedTitle(text)) return false;
-  return /(?:\b[A-Z]{1,4}\d{0,2}[-_/]\d{2,4}\b|\b(?:SEC|SR|UR|SAR|AR|RRR|RR|LR|R|UC|U|C)\+?\b|パラレル|シングル|鑑定|PSA\d+)/i.test(text);
+  // GD03-118RP2 / GD03-050LRP / GD03-110UP+ もカード番号。
+  // 番号末尾の英字を見落とすと「未開封」のプロモカードまでBOX扱いしてしまう。
+  return /(?:\b[A-Z]{1,4}\d{0,2}[-_/]\d{2,4}(?:[A-Z][A-Z0-9]*)?\b|\b(?:SEC|SR|UR|SAR|AR|RRR|RR|LR|R|UC|U|C)\+?\b|パラレル|シングル|鑑定|PSA\d+)/i.test(text);
 }
 
 export function isLikelyProductUrl(url) {
-  return /\/(?:product\/\d+|products\/detail\/?\d*|view\/item\/|shopdetail\/|products\/[^/?#]+|shop\/g\/g[^/?#]+|item\/[^/?#]+|goods\/[^/?#]+|product-[^/?#]+)|\/[^/?#]+\.html(?:\?|$)/i.test(String(url || ''));
+  let parsed;
+  try { parsed = new URL(String(url || '')); } catch { return false; }
+  if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+  const path = parsed.pathname;
+  // 検索の「次へ」やカテゴリー一覧は商品ではない。先に明示的に除く。
+  if (/\/(?:products\/list|product-list)(?:\/|$)|\/(?:search|shopbrand|index|category)\.html$/i.test(path)) return false;
+  return /\/(?:product\/\d+|products\/detail\/\d+|view\/item\/|shopdetail\/|products\/[^/]+|shop\/g\/g[^/]+|item\/[^/]+|goods\/[^/]+|product-[^/]+)|\/[^/]+\.html$/i.test(path);
 }
 
 export function extractPrice(text) {
@@ -119,7 +133,7 @@ export function parseAttributes(tag) {
 }
 
 export function absoluteUrl(base, href) {
-  try { return new URL(String(href || ''), String(base || '')).toString(); } catch { return href; }
+  try { return new URL(decodeHtmlEntities(String(href || '')), String(base || '')).toString(); } catch { return href; }
 }
 
 export function normalizeUrlKey(url) {

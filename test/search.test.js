@@ -52,3 +52,47 @@ test('reads JSON-LD product price and availability', () => {
 test('stock parser treats explicit sold-out wording as out of stock', () => {
   assert.deepEqual(extractStock('この商品は現在、品切れです'), { stock: 'out_of_stock', qty: 0 });
 });
+
+// 実検索で混入した「未開封プロモ」と、検索ページへの移動リンクを再現する。
+test('excludes sealed promo singles and pagination from BOX results', () => {
+  const html = `
+    <a href="/products/detail/1">未開封プロモ【GCG-GD03-118RP2】</a><span>新品 1,480円</span>
+    <a href="/products/detail/2">未開封プロモ【GD03-050LRP】</a><span>新品 129,980円</span>
+    <a href="/products/detail/3">参加者パックのカード【GD03-110UP+】</a><span>980円</span>
+    <a href="/products/list?name=GD03&amp;pageno=2">次へ</a><span>新品BOX GD03</span>
+    <a href="/product-list/2379">未開封商品</a><span>新品BOX GD03</span>
+    <a href="/products/detail/4">GD03 BOX</a><span>5,808円</span>
+  `;
+  const results = findCandidateProducts(html, 'https://example.com/', 'GD03', true, 10);
+  assert.deepEqual(results.map((item) => item.url), ['https://example.com/products/detail/4']);
+});
+
+test('prefers BOX and carton over a cheaper single booster pack', () => {
+  const html = `
+    <a href="/products/pack">新品 GD03 ブースターパック</a><span>240円</span>
+    <a href="/products/box">新品 GD03 ブースターパック (BOX)</a><span>4,780円</span>
+    <a href="/products/carton">新品 GD03 ブースターパック カートン</a><span>53,760円</span>
+    <a href="/products/model">中古 GD-03 プラモデル用 アートボックス</a><span>3,415円</span>
+  `;
+  const results = findCandidateProducts(html, 'https://example.com/', 'GD03', true, 2);
+  assert.deepEqual(results.map((item) => item.url), ['https://example.com/products/carton', 'https://example.com/products/box']);
+});
+
+test('reads the product h2 instead of the shop logo h1 and ignores sidebar stock', () => {
+  const html = `
+    <head><meta property="og:title" content="GD03 カートン"></head>
+    <header><h1>テスト通販</h1><p>おすすめ商品の在庫数 99点</p></header>
+    <h2 id="product_name"><span>GD03 カートン</span></h2>
+    <div>販売価格: 69,696円</div><span class="stock">在庫なし</span>
+  `;
+  assert.deepEqual(parseProductDetail(html), {
+    title: 'GD03 カートン', price: 69696, stock: 'out_of_stock', stockQty: 0,
+  });
+});
+
+test('keeps zero-price discontinued listings as price unknown', () => {
+  const result = parseProductDetail('<h2 id="product_name">GD03 BOX</h2><div>販売価格: 0円</div><span>在庫なし</span>');
+  assert.equal(result.title, 'GD03 BOX');
+  assert.equal(result.price, null);
+  assert.equal(result.stock, 'out_of_stock');
+});
