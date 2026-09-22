@@ -96,7 +96,7 @@ function renderProductGroup(group) {
 function renderCard(row, compact = false) {
   const reasons = [];
   if (!row.detailChecked) reasons.push(row.reviewReason || '商品詳細は未確認');
-  if (row.price == null) reasons.push('価格不明');
+  if (row.price == null) reasons.push(row.priceIssue || '価格不明');
   if (row.stock === 'unknown') reasons.push('在庫不明');
   if (row.kind === 'unknown') reasons.push('販売単位不明');
   const time = row.searchedAt && !Number.isNaN(Date.parse(row.searchedAt))
@@ -133,7 +133,7 @@ export function renderStatuses(container, stores, storeResults, searching) {
     const result = storeResults.get(store.id);
     if (!result) return statusRow(store, searching ? '待機' : '未検索', '', store.home);
     const labels = { ok: '候補あり', no_hit: '候補を抽出できず', blocked: '取得拒否', error: 'エラー' };
-    const label = labels[result.status] || result.status || '不明';
+    const label = result.status === 'no_hit' && result.coverage?.noHitConfirmed ? '確認範囲で該当なし' : labels[result.status] || result.status || '不明';
     const c = result.coverage;
     const message = [result.error, result.results?.length ? `${result.results.length}候補` : '', c ? `${c.pagesRead}ページ・詳細${c.detailChecks}件確認` : '',
       describeSearchEvidence(result), c?.fallback === 'box_keyword' ? 'BOXで絞り込む補助検索を実施' : '', ...(c?.partialReasons || [])].filter(Boolean).join('／');
@@ -145,11 +145,23 @@ export function describeSearchEvidence(result) {
   if (result.status !== 'no_hit') return '';
   const c = result.coverage, evidence = c?.listing;
   if (!evidence) return '';
+  if (c.searchPages?.length && c.searchPages.every(p => p.outcome === 'empty')) return '店舗の検索結果が0件。売り切れを意味するものではありません';
   if (c.candidateCount > 0) return '商品詳細を確認した結果、検索条件に合う候補なし';
   if (evidence.excludedSingles > 0) return '確認した範囲ではシングル等を除外し、BOX候補なし';
   if (evidence.excludedOther > 0) return '確認した範囲では用品等を除外し、BOX候補なし';
   if (evidence.productLinks > 0) return '商品リンクを読み取ったが、検索語に一致する候補なし';
   return '商品リンクを読み取れず。検索結果なし・ページ構造の違いは手動確認';
+}
+
+// 正常な「該当なし」を、通信失敗や読み取り失敗の件数に混ぜない。
+export function summarizeStoreChecks(results) {
+  let noHit = 0, partial = 0, failed = 0;
+  for (const r of results) {
+    if (r.status === 'blocked' || r.status === 'error') { failed++; continue; }
+    if (r.status === 'no_hit' && r.coverage?.noHitConfirmed && !r.coverage?.partialReasons?.length) noHit++;
+    if (r.coverage?.partialReasons?.length || (r.status === 'no_hit' && !r.coverage?.noHitConfirmed)) partial++;
+  }
+  return { noHit, partial, failed };
 }
 
 function statusRow(store, label, message, manualUrl) {

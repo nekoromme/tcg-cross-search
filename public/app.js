@@ -1,4 +1,4 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.6.1';
+import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.6.2';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
 
@@ -191,8 +191,8 @@ async function startSearch() {
 }
 
 function updateProgress(completed, done = false) {
-  const partial = [...storeResults.values()].filter(r => r.status !== 'ok' || r.coverage?.partialReasons?.length).length;
-  els.progress.textContent = done ? `検索完了 ${completed}/${activeStores.length}${partial ? `・一部未確認 ${partial}店` : ''}` : `検索中 ${completed}/${activeStores.length}`;
+  const { noHit, partial, failed } = summarizeStoreChecks(storeResults.values());
+  els.progress.textContent = done ? `検索完了 ${completed}/${activeStores.length}${noHit ? `・確認範囲で該当なし ${noHit}店` : ''}${partial ? `・一部未確認 ${partial}店` : ''}${failed ? `・取得失敗 ${failed}店` : ''}` : `検索中 ${completed}/${activeStores.length}`;
 }
 
 function refreshHistory() {

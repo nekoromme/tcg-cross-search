@@ -1,11 +1,12 @@
 import { STORE_MAP, STORES, buildStoreSearchUrl } from './stores.js';
 import { findCandidateProducts, parseProductDetail, sanitizeQuery } from './search.js';
-import { isJunkTitle, looksLikeSingleCard } from './search-common.js';
+import { isJunkTitle, looksLikeSingleCard, normalizeUrlKey } from './search-common.js';
+import { searchPageEvidence } from './search-evidence.js';
 import { productKind } from '../public/product-kind.js';
 import { matchesQuery, searchTerms, identifyProduct, comparePrice } from '../public/catalog.js';
 import { findNextSearchPage } from './pagination.js';
 
-const APP_VERSION = '0.6.1';
+const APP_VERSION = '0.6.2';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -13,7 +14,7 @@ const SEARCH_HTML_MAX_BYTES = 1_500_000;
 const DETAIL_HTML_MAX_BYTES = 900_000;
 
 const HTTP_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.6.1; +https://github.com/nekoromme/tcg-cross-search)',
+  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.6.2; +https://github.com/nekoromme/tcg-cross-search)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ja,en-US;q=0.8,en;q=0.6',
 };
@@ -77,7 +78,8 @@ async function handleStoreSearch(request) {
     searchedAt: new Date().toISOString(),
     elapsedMs: 0,
     coverage: { pagesRead: 0, searchRequests: 0, detailChecks: 0, candidateCount: 0, partialReasons: [], nextPageUrl: null,
-      listing: { productLinks: 0, matchingLinks: 0, excludedSingles: 0, excludedOther: 0 }, fallback: null },
+      listing: { productLinks: 0, matchingLinks: 0, excludedSingles: 0, excludedOther: 0 }, fallback: null,
+      searchPages: [], detailFailures: [] },
   };
 
   try {
@@ -107,10 +109,13 @@ async function handleStoreSearch(request) {
       searchResponse = nextResponse;
       baseResult.coverage.pagesRead++;
       if (searchResponse.truncated) baseResult.coverage.partialReasons.push('ページの容量上限');
-      for (const candidate of findCandidateProducts(searchResponse.text, searchResponse.finalUrl || searchUrl, query, sealedOnly, 100, true, baseResult.coverage.listing)) {
+      const pageStats = {};
+      const pageCandidates = findCandidateProducts(searchResponse.text, searchResponse.finalUrl || searchUrl, query, sealedOnly, 100, true, pageStats);
+      recordSearchPage(baseResult.coverage, searchResponse, pageStats, pageCandidates);
+      for (const candidate of pageCandidates) {
         // 店側の追跡用引数だけで同じ商品が重複しないよう、商品URLでまとめる。
-        const key = new URL(candidate.url); key.search = ''; key.hash = '';
-        if (!candidatesByUrl.has(key.href)) candidatesByUrl.set(key.href, candidate);
+        const key = normalizeUrlKey(candidate.url);
+        if (!candidatesByUrl.has(key)) candidatesByUrl.set(key, candidate);
       }
       const next = findNextSearchPage(searchResponse.text, searchResponse.finalUrl || searchUrl, store);
       baseResult.coverage.nextPageUrl = next;
@@ -131,7 +136,10 @@ async function handleStoreSearch(request) {
       baseResult.coverage.searchRequests++;
       if (extra?.status === 200) {
         baseResult.coverage.pagesRead++;
-        for (const c of findCandidateProducts(extra.text, extra.finalUrl || alternate, query, sealedOnly, 100, true, baseResult.coverage.listing)) candidatesByUrl.set(c.url, c);
+        const stats = {};
+        const rows = findCandidateProducts(extra.text, extra.finalUrl || alternate, query, sealedOnly, 100, true, stats);
+        recordSearchPage(baseResult.coverage, extra, stats, rows);
+        for (const c of rows) candidatesByUrl.set(normalizeUrlKey(c.url), c);
         baseResult.coverage.nextPageUrl ||= findNextSearchPage(extra.text, extra.finalUrl || alternate, store);
         if (extra.truncated) baseResult.coverage.partialReasons.push('ページの容量上限');
       } else if (extra) baseResult.coverage.partialReasons.push(`別表記の検索 HTTP ${extra.status}`);
@@ -164,7 +172,11 @@ async function handleStoreSearch(request) {
             try {
               const detailResponse = await fetchHtml(candidate.url, DETAIL_HTML_MAX_BYTES, budget);
               baseResult.coverage.detailChecks++;
-              if (detailResponse.status < 200 || detailResponse.status >= 400) return { ...candidate, reviewReason: '商品詳細を取得できませんでした' };
+              if (detailResponse.status < 200 || detailResponse.status >= 400) {
+                const reason = `商品詳細 HTTP ${detailResponse.status}`;
+                baseResult.coverage.detailFailures.push({ url: candidate.url, reason });
+                return { ...candidate, reviewReason: reason };
+              }
               const refined = parseProductDetail(detailResponse.text);
               // 詳細で別の商品・シングル・用品だと分かった候補は捨てる。
               if (refined.title && (!matchesQuery(refined.title, query)
@@ -184,14 +196,21 @@ async function handleStoreSearch(request) {
               // 発売前の商品を、即納できる在庫として表示しない。
               if (row.stock === 'in_stock' && product?.releaseDate && product.releaseDate > new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })) row.stock = 'preorder';
               row.comparison = comparePrice(row);
+              if (!row.detailChecked || row.price == null || row.stock === 'unknown') {
+                const reason = [!row.detailChecked && '商品名を判定できず', row.price == null && (row.priceIssue || '価格を判定できず'), row.stock === 'unknown' && '在庫表示を判定できず'].filter(Boolean).join('・');
+                baseResult.coverage.detailFailures.push({ url: candidate.url, reason });
+              }
               return row;
-            } catch {
-              return { ...candidate, reviewReason: '商品詳細を取得できませんでした' };
+            } catch (error) {
+              const reason = `商品詳細: ${safeErrorMessage(error)}`;
+              baseResult.coverage.detailFailures.push({ url: candidate.url, reason });
+              return { ...candidate, reviewReason: reason };
             }
           }),
         );
         baseResult.results = baseResult.results.filter(Boolean);
         if (baseResult.results.some(row => !row.detailChecked)) baseResult.coverage.partialReasons.push('商品詳細の未確認あり');
+        if (baseResult.coverage.detailFailures.length) baseResult.coverage.partialReasons.push(...baseResult.coverage.detailFailures.map(f => f.reason));
         if (!baseResult.results.length) baseResult.status = 'no_hit';
       }
     }
@@ -201,15 +220,26 @@ async function handleStoreSearch(request) {
   }
 
   baseResult.elapsedMs = Date.now() - startedAt;
+  // すべての取得ページで根拠があった場合だけ「該当なし」を確定する。
+  // 続きのページや通信エラーがある場合の未確認フラグは別に保持する。
+  baseResult.coverage.noHitConfirmed = baseResult.status === 'no_hit' && baseResult.coverage.searchPages.length > 0
+    && baseResult.coverage.searchPages.every(p => p.outcome !== 'unreadable');
   baseResult.coverage.requests = budget.requests;
   baseResult.coverage.partialReasons = [...new Set(baseResult.coverage.partialReasons)];
   // 検索語や認証情報はログへ出さず、故障の切り分けに必要な店・件数・時間を残す。
   console.info(JSON.stringify({ event: 'store_search', version: APP_VERSION, store: store.id, status: baseResult.status,
     pages: baseResult.coverage.pagesRead, details: baseResult.coverage.detailChecks, requests: budget.requests,
-    listing: baseResult.coverage.listing, fallback: baseResult.coverage.fallback, elapsedMs: baseResult.elapsedMs }));
+    listing: baseResult.coverage.listing, fallback: baseResult.coverage.fallback,
+    searchPages: baseResult.coverage.searchPages, partialReasons: baseResult.coverage.partialReasons,
+    detailFailureReasons: baseResult.coverage.detailFailures.map(f => f.reason), elapsedMs: baseResult.elapsedMs }));
   const response = jsonResponse(baseResult);
   response.headers.set('Cache-Control', forceRefresh ? 'no-store' : `public, max-age=${CACHE_SECONDS}`);
   return response;
+}
+
+function recordSearchPage(coverage, response, stats, candidates) {
+  for (const [key, value] of Object.entries(stats)) coverage.listing[key] += value;
+  coverage.searchPages.push(searchPageEvidence(response.text, stats, candidates, response.truncated));
 }
 
 async function fetchHtml(url, maxBytes, budget) {

@@ -4,6 +4,8 @@ const PAGE_FIELDS = ['page', 'pageno', 'page_no'];
 // 店が表示した「次へ」だけを読む。全商品一覧や外部URLへ検索が逸れないよう検証する。
 export function findNextSearchPage(html, currentUrl, store) {
   const current = new URL(currentUrl);
+  // pが検索語の店もあるので、店舗で確認した時だけページ番号として使う。
+  const pageFields = [...PAGE_FIELDS, ...(store.pageFields || [])];
   const candidates = [];
   for (const match of String(html).matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>|<link\b([^>]*)>/gi)) {
     const attrs = parseAttributes(match[1] || match[3]);
@@ -12,7 +14,7 @@ export function findNextSearchPage(html, currentUrl, store) {
     let next;
     try { next = new URL(attrs.href, current); } catch { continue; }
     if (next.origin !== current.origin || next.pathname !== current.pathname || next.username || next.password) continue;
-    const pageField = PAGE_FIELDS.find(field => next.searchParams.has(field));
+    const pageField = pageFields.find(field => next.searchParams.has(field));
     if (!pageField) continue;
     const number = Number(next.searchParams.get(pageField));
     const oldNumber = Number(current.searchParams.get(pageField) || 1);
@@ -22,12 +24,12 @@ export function findNextSearchPage(html, currentUrl, store) {
     // ページ番号以外の検索条件は同じものだけ。省略された条件は元の値を引き継ぐ。
     let valid = true;
     for (const [key, value] of current.searchParams) {
-      if (PAGE_FIELDS.includes(key)) continue;
+      if (pageFields.includes(key)) continue;
       if (next.searchParams.has(key) && next.searchParams.get(key) !== value) { valid = false; break; }
       next.searchParams.set(key, value);
     }
     for (const [key] of next.searchParams) {
-      if (!PAGE_FIELDS.includes(key) && !current.searchParams.has(key)) valid = false;
+      if (!pageFields.includes(key) && !current.searchParams.has(key)) valid = false;
     }
     if (!valid || next.searchParams.get(store.field) !== current.searchParams.get(store.field)) continue;
     next.hash = '';
