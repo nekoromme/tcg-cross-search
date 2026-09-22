@@ -65,7 +65,7 @@ export async function monitorCommand(state, body, {minInterval=30}={}) {
     case 'toggle': {
       const rule=state.rules.find(r=>r.id===body.id); if(!rule)throw new Error('監視条件が見つかりません');
       rule.enabled=body.enabled===true;
-      if(rule.enabled) {for(const t of state.targets) if(t.ruleIds.includes(rule.id))t.nextAt=Date.now();for(const j of state.jobs)if(j.ruleId===rule.id)j.nextAt=Date.now();}
+      if(rule.enabled) {for(const t of state.targets) if(t.ruleIds.includes(rule.id))t.nextAt=Math.max(now,t.error?t.nextAt:0);for(const j of state.jobs)if(j.ruleId===rule.id)j.nextAt=Math.max(now,j.error?j.nextAt:0);}
       else for(const e of state.events)if(e.ruleId===rule.id&&e.delivery==='pending')e.delivery='cancelled';
       break;
     }

@@ -17,7 +17,8 @@ async function perform(fn){if(busy)return;busy=true;try{await fn();}catch(e){mes
 function render() {
   const openPanels=new Set([...document.querySelectorAll('details[data-panel][open]')].map(el=>el.dataset.panel));
   const active=state.rules.filter(r=>r.enabled).length;
-  $('overview').textContent=`${state.enabled?(active?'稼働中':'待機（有効な条件なし）'):'全体を一時停止中'}／有効な条件 ${active}件／監視中 ${state.load?.activePages||0}ページ・保存 ${state.targets.length}ページ／最終巡回 ${time(state.lastTick)}`;
+  const hasWork=(state.load?.activePages||0)>0 || state.jobs.some(j=>!(state.disabledStoreIds||[]).includes(j.storeId)&&state.rules.some(r=>r.id===j.ruleId&&r.enabled));
+  $('overview').textContent=`${state.enabled?(active&&hasWork?'稼働中':'待機（有効な監視対象なし）'):'全体を一時停止中'}／有効な条件 ${active}件／監視中 ${state.load?.activePages||0}ページ・保存 ${state.targets.length}ページ／最終巡回 ${time(state.lastTick)}`;
   $('loadLimits').textContent=`登録上限：条件${state.limits.rules}件・商品ページ${state.limits.targets}件。現在${state.rules.length}条件／${state.targets.length}ページ。商品確認は約${Math.ceil((state.load?.intervalSeconds||state.intervalSeconds)/60)}分以上、掲載検索は約${Math.ceil((state.load?.discoverySeconds||1800)/60)}分以上。${state.load?.waitingPages?`上限超過の${state.load.waitingPages}ページは待機中。不要な条件を削除してください。`:''} 全端末共通で店舗への通信は1日20,000回まで（うち自動監視12,000回まで）、同じ店舗は1日2,000回まで。上限時は待機し、日本時間0時に翌日分へ切り替わります。`;
   $('addForm').querySelector('button[type="submit"]').disabled=state.rules.length>=state.limits.rules || state.targets.length>=state.limits.targets;
   $('pauseAll').textContent=state.enabled?'全体を一時停止':'全体を再開';
