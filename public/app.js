@@ -317,4 +317,3 @@ function renderCatalog() {
     list.append(section);
   }
 }
-

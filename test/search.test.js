@@ -96,4 +96,3 @@ test('keeps zero-price discontinued listings as price unknown', () => {
   assert.equal(result.price, null);
   assert.equal(result.stock, 'out_of_stock');
 });
-
