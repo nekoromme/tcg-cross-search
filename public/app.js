@@ -1,4 +1,4 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.6.0';
+import { renderHistory, renderRows, renderStatuses, saveHistory } from './ui.js?v=0.6.1';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
 
@@ -146,7 +146,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.6.0',
+          v: '0.6.1',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
@@ -317,3 +317,4 @@ function renderCatalog() {
     list.append(section);
   }
 }
+

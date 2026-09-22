@@ -5,7 +5,7 @@ import { productKind } from '../public/product-kind.js';
 import { matchesQuery, searchTerms, identifyProduct, comparePrice } from '../public/catalog.js';
 import { findNextSearchPage } from './pagination.js';
 
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.6.1';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -13,7 +13,7 @@ const SEARCH_HTML_MAX_BYTES = 1_500_000;
 const DETAIL_HTML_MAX_BYTES = 900_000;
 
 const HTTP_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.6.0; +https://github.com/nekoromme/tcg-cross-search)',
+  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.6.1; +https://github.com/nekoromme/tcg-cross-search)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ja,en-US;q=0.8,en;q=0.6',
 };
@@ -121,7 +121,7 @@ async function handleStoreSearch(request) {
     // シングルが検索結果を占める店では、補助検索の1回をBOX絞り込みに使う。
     // 複数語検索を実ページで確認した店だけ。元の検索語を保ち、回数は増やさない。
     const boxFallback = sealedOnly && store.boxKeywordFallback && baseResult.coverage.listing.excludedSingles > 0 && !/BOX|ボックス|カートン/i.test(terms[0]);
-    const alternateTerm = boxFallback ? `${terms[0]} BOX` : terms[1];
+    const alternateTerm = boxFallback ? `${terms[0]} ${store.boxKeyword || 'BOX'}` : terms[1];
     if (!candidatesByUrl.size && !continuationFailed && alternateTerm && searchResponse?.status === 200 && Date.now() + 10_000 < budget.deadline) {
       const alternate = buildStoreSearchUrl(store, alternateTerm);
       baseResult.coverage.fallback = boxFallback ? 'box_keyword' : 'alias';
