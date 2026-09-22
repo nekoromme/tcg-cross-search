@@ -34,7 +34,7 @@ test('single-dominated searches use just one BOX fallback and verify its result'
     if (u.searchParams.get('keyword') === 'GD05 BOX') return new Response('<a href="/product/8">GD05 BOX</a>');
     return new Response(singles);
   });
-  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD05'), {})).json();
+  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD05'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.deepEqual(urls.filter(u=>u.pathname==='/product-list').map(u=>u.searchParams.get('keyword')), ['GD05','GD05 BOX']);
   assert.equal(data.coverage.fallback,'box_keyword');
   assert.equal(data.coverage.requests,3);
@@ -46,18 +46,19 @@ test('BOX fallback does not cascade to further aliases after no hit or rejection
   const urls=[];
   const mock=t.mock.method(globalThis,'fetch',async url=>{urls.push(String(url)); return new Response(singles);});
   const request=new Request('https://app.test/api/search?store=masters_gundam&q=GD05');
-  const data=await (await worker.fetch(request,{})).json();
+  const data=await (await worker.fetch(request, {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(data.status,'no_hit'); assert.equal(urls.length,2);
   urls.length=0;
   mock.mock.mockImplementation(async url=>{urls.push(String(url)); return new Response('denied',{status:429});});
-  assert.equal((await (await worker.fetch(request,{})).json()).status,'blocked');
+  assert.equal((await (await worker.fetch(request, {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json()).status,'blocked');
   assert.equal(urls.length,1);
 });
 
 test('stores without verified multiword search retain the existing alias fallback', async t => {
   const terms=[];
   t.mock.method(globalThis,'fetch',async url=>{terms.push(new URL(url).searchParams.get('name'));return new Response(singles);});
-  const data=await (await worker.fetch(new Request('https://app.test/api/search?store=193&q=GD05'),{})).json();
+  const data=await (await worker.fetch(new Request('https://app.test/api/search?store=193&q=GD05'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.deepEqual(terms,['GD05','Freedom Ascension']);
   assert.equal(data.coverage.fallback,'alias');
 });
+
