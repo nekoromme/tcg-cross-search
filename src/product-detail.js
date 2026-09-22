@@ -61,8 +61,12 @@ export function parseProductDetail(html) {
     const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
     if (title) out.title = cleanText(title[1]).replace(/\s*[|｜].*$/, '').trim();
   }
-  if (out.price == null) out.price = extractPrice(mainText);
-  const priceText = mainText.normalize('NFKC');
+  // Yahooでは価格欄の下に「ポイントは税抜価格が対象」という別の説明がある。
+  // それを商品価格の税区分と誤認しないよう、専用価格欄だけで価格条件を読む。
+  const dedicatedPrice = productHeading?.yahoo && html.slice(productHeading.index, productHeading.index + 45000)
+    .match(/<p\b[^>]*itemprop=["']price["'][^>]*>[\s\S]*?<\/p>/i);
+  const priceText = (dedicatedPrice ? cleanText(dedicatedPrice[0]) : mainText).normalize('NFKC');
+  if (out.price == null) out.price = extractPrice(priceText);
   if (out.price == null && /(?:販売価格|税込価格)\s*[:：]?\s*[¥￥]?\s*0\s*(?:円|[（(]税込)/.test(priceText))
     out.priceIssue = '店舗の表示価格が0円のため販売価格を確認できず';
   // 税抜だけのページを税込の定価と比較しない。税込併記は明示された金額を採用。
@@ -120,7 +124,7 @@ function findProductHeading(html) {
   // Yahoo!ショッピングの新画面は商品名がh1ではなくpにある。
   // キャッチコピー（BOX/カートン等）を混ぜず、商品名だけを開始位置にする。
   const yahooName = html.match(/<div\b[^>]*class=["'][^"']*\bstyles_itemName__[^"']*["'][^>]*>[\s\S]{0,1500}?<p\b[^>]*class=["'][^"']*\bstyles_name__[^"']*["'][^>]*>([\s\S]*?)<\/p>/i);
-  if (yahooName) return Object.assign([yahooName[0], '', yahooName[1]], { index: yahooName.index });
+  if (yahooName) return Object.assign([yahooName[0], '', yahooName[1]], { index: yahooName.index, yahoo: true });
   // 二木のMakeShop画面は見出しタグを使わず div.item-title に商品名を置いている。
   // 内側の売切バッジやカテゴリ名を除き、購入対象の商品名だけを取り出す。
   const makeshop = html.match(/<div\b[^>]*class=["']item-title["'][^>]*>([\s\S]*?)<\/div>\s*(?=<(?!\/div))/i);

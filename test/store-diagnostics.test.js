@@ -28,7 +28,8 @@ test('raw CARDMAX anchors and camel-case product heading yield the real BOX offe
 test('Yahoo paragraph product title exposes own stock without borrowing another store stock', () => {
   const html = '<div class="styles_itemName__Cf_Kt"><p class="styles_catchCopy__yhwu9">BOX カートン</p>' +
     '<p class="styles_name__u228e">BRIGHTNESS OF HOPE FB11 BOX</p></div>' +
-    '<ul class="styles_itemLabels__CoCPa"><li>在庫なし</li></ul><p>販売価格: 13,500円</p>' +
+    '<ul class="styles_itemLabels__CoCPa"><li>在庫なし</li></ul><p itemprop="price">13,500<span>円</span></p>' +
+    '<p>ポイントは原則税抜価格が対象です</p><p>入会特典を使うと8,500円</p>' +
     '<h2 class="ModulesHeader__heading">他ストアでの取り扱い</h2><p>在庫あり 100円</p>';
   const row=parseProductDetail(html);
   assert.equal(row.title,'BRIGHTNESS OF HOPE FB11 BOX');
