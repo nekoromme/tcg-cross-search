@@ -1,0 +1,16 @@
+/* スマホでも設定と状態を1列で読めるようにする。 */
+.panel { margin: 16px 0; }
+.panel > summary { cursor: pointer; min-height: 44px; padding: 12px 0; font-weight: 700; }
+form { display: grid; gap: 12px; margin-top: 14px; }
+form label { display: grid; gap: 6px; }
+form input:not([type=checkbox]), form select, #keyDisplay { width:100%; min-width:0; padding:10px; font:inherit; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--text); }
+.monitorGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+form .check { display:flex; align-items:center; gap:8px; }
+.monitorActions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.monitorActions button, form button, .panel > button { min-height:44px; font-size:14px; padding:10px 14px; }
+.monitorCard { padding:14px 0; border-bottom:1px solid var(--border); overflow-wrap:anywhere; }
+.monitorCard strong { display:block; margin-bottom:6px; }
+.monitorCard p { margin:6px 0; font-size:14px; line-height:1.7; }
+.monitorError { color:var(--bad,#b54708); }
+#keyDisplay { margin-top:12px; }
+@media(max-width:500px) { .monitorGrid { grid-template-columns:1fr; } }

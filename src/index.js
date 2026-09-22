@@ -6,8 +6,10 @@ import { sealedCategoryUrls, validateContinuation } from './store-exceptions.js'
 import { productKind } from '../public/product-kind.js';
 import { matchesQuery, searchTerms, identifyProduct, comparePrice } from '../public/catalog.js';
 import { findNextSearchPage } from './pagination.js';
+import { routeMonitor } from './monitor-service.js';
+export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.8.0';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -15,7 +17,7 @@ const SEARCH_HTML_MAX_BYTES = 1_500_000;
 const DETAIL_HTML_MAX_BYTES = 900_000;
 
 const HTTP_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.7.0; +https://github.com/nekoromme/tcg-cross-search)',
+  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.8.0; +https://github.com/nekoromme/tcg-cross-search)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ja,en-US;q=0.8,en;q=0.6',
 };
@@ -23,6 +25,7 @@ const HTTP_HEADERS = {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/monitor') return routeMonitor(request, env);
 
     if (url.pathname === '/api/health') {
       return jsonResponse({ ok: true, version: APP_VERSION, stores: STORES.length });
@@ -44,7 +47,7 @@ export default {
   },
 };
 
-async function handleStoreSearch(request) {
+export async function handleStoreSearch(request) {
   const startedAt = Date.now();
   const url = new URL(request.url);
   const storeId = url.searchParams.get('store') || '';
@@ -290,7 +293,7 @@ function recordSearchPage(coverage, response, stats, candidates) {
   coverage.searchPages.push(searchPageEvidence(response.text, stats, candidates, response.truncated));
 }
 
-async function fetchHtml(url, maxBytes, budget) {
+export async function fetchHtml(url, maxBytes, budget) {
   if (budget.requests >= 12 || Date.now() >= budget.deadline) throw new Error('検索の通信・時間上限に達しました');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort('timeout'), Math.min(FETCH_TIMEOUT_MS, budget.deadline - Date.now()));

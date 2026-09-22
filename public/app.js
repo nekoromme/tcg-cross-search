@@ -1,4 +1,4 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.7.0';
+import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.8.0';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
 import { collectStoreResults } from './continued-search.js';
@@ -150,7 +150,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.7.0',
+          v: '0.8.0',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
@@ -373,3 +373,15 @@ function renderCatalog() {
     list.append(section);
   }
 }
+
+// 検索で見つかった商品ページも渡し、最初の全店検索を待たずに確認を始める。
+document.querySelector('#monitorSearch').addEventListener('click', () => {
+  const query=els.query.value.trim();
+  if (!query) { els.query.focus(); els.progress.textContent='監視する商品名・型番を入力して。'; return; }
+  if (searching) { els.progress.textContent='検索が終わってから監視登録して。'; return; }
+  const seeds=[...storeResults.values()].flatMap(r=>(r.results||[]).map(row=>({storeId:r.store.id,url:row.url,title:row.title})));
+  try {
+    sessionStorage.setItem('tcg-monitor-draft',JSON.stringify({rule:{query,...displayOptions()},seeds}));
+    location.href='/monitor.html';
+  } catch { els.progress.textContent='監視条件を一時保存できません。自動在庫監視の画面で入力してください。'; }
+});

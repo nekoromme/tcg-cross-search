@@ -6,12 +6,13 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow">
   <title>TCG横断在庫検索</title>
-  <link rel="stylesheet" href="/styles.css?v=0.7.0">
+  <link rel="stylesheet" href="/styles.css?v=0.8.0">
 </head>
 <body>
   <main class="wrap">
     <header>
       <h1>TCG横断在庫検索</h1>
+      <a href="/monitor.html">自動在庫監視を開く →</a>
       <p>商品名・JAN・型番で、登録済みショップを必要な時だけ横断検索する個人用ツール。</p>
     </header>
 
@@ -77,6 +78,7 @@
           <span id="resultCount"></span>
         </div>
       </form>
+      <button id="monitorSearch" type="button" class="chip">今の検索条件を監視登録</button>
       <button id="continueSearch" type="button" hidden>残りを追加確認</button>
     </section>
 
@@ -105,6 +107,6 @@
       <div id="catalogList" class="catalogList"></div>
     </details>
   </main>
-  <script type="module" src="/app.js?v=0.7.0"></script>
+  <script type="module" src="/app.js?v=0.8.0"></script>
 </body>
 </html>
