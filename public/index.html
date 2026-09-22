@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex,nofollow">
   <title>TCG横断在庫検索</title>
-  <link rel="stylesheet" href="/styles.css?v=0.6.2">
+  <link rel="stylesheet" href="/styles.css?v=0.7.0">
 </head>
 <body>
   <main class="wrap">
@@ -22,7 +22,7 @@
             <select id="gameFilter"><option value="">すべて</option><option value="pokemon">ポケモンカード</option><option value="onepiece">ワンピース</option><option value="gundam">ガンダム</option><option value="dragonball">ドラゴンボール（フュージョンワールド）</option><option value="lorcana">ロルカナ</option></select>
           </label>
           <label for="searchDepth">検索範囲
-            <select id="searchDepth"><option value="standard">通常（先頭ページ）</option><option value="wide">広く探す（最大3ページ）</option></select>
+            <select id="searchDepth"><option value="standard">通常（自動で追加確認）</option><option value="wide">広く探す（追加確認を多めに）</option></select>
           </label>
         </div>
         <details id="searchSettings" class="searchSettings">
@@ -77,6 +77,7 @@
           <span id="resultCount"></span>
         </div>
       </form>
+      <button id="continueSearch" type="button" hidden>残りを追加確認</button>
     </section>
 
     <section id="results" class="results">
@@ -95,7 +96,7 @@
     </details>
 
     <p class="foot">
-      各店で入力した商品を検索し、最大8候補・詳細4件を確認します。「広く探す」では候補が少ない場合に検索結果を先頭から最大3ページ読みます。候補がない時は、対応店でBOXに絞り込むか、登録済みの別名で1回だけ補助検索します。該当なしは店全体の在庫なしを意味しません。注文前に商品ページで価格・在庫・販売条件を確認してください。
+      残ったページと商品詳細は自動で追加確認します。通常は各店6回、広く探す場合は20回に小分けして処理し、残りがあれば「残りを追加確認」から続けられます。対応店では別名・BOX絞り込み・新品一覧も確認します。該当なしは確認範囲内の結果で、店全体の在庫なしを意味しません。0円・在庫なしの商品は購入不可として扱います。注文前に商品ページで価格・在庫・販売条件を確認してください。
     </p>
 
     <details class="panel diagnostics">
@@ -104,6 +105,6 @@
       <div id="catalogList" class="catalogList"></div>
     </details>
   </main>
-  <script type="module" src="/app.js?v=0.6.2"></script>
+  <script type="module" src="/app.js?v=0.7.0"></script>
 </body>
 </html>

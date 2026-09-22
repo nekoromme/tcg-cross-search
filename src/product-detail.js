@@ -98,6 +98,12 @@ export function parseProductDetail(html) {
   if (/シュリンク(?:なし|無し|無|を剥|をはが|開封)|シュリンクが(?:ない|無い)/.test(out.title + ' ' + mainText)) conditions.push('シュリンクなし・開封条件あり');
   if (/店頭受取|店舗受取|店頭引取/.test(out.title)) conditions.push('店頭受取');
   if (conditions.length) out.conditions = conditions;
+  // 店舗が明示的に0円かつ在庫なしにした商品は、販売価格未設定の購入不可品。
+  // 販売終了とは断定せず、再入荷時には次回取得した実価格で通常品へ戻す。
+  if (out.stock === 'out_of_stock' && out.price == null && out.priceIssue === '店舗の表示価格が0円のため販売価格を確認できず') {
+    out.priceState = 'unavailable';
+    out.priceIssue = '現在購入不可・販売価格未設定';
+  }
   if (out.priceComparable === false) out.price = null;
   return out;
 }

@@ -54,7 +54,7 @@ export function selectRows(storeResults, options = {}) {
     if (comp.status !== 'known') priceUnknown++;
     if ((comp.status !== 'known' && !includeUnknown) || (priceLimit !== 'all' && comp.status === 'known' && !withinPriceLimit(row, comp, Number(priceLimit)))) { hidden++; priceHidden++; continue; }
     if (maxPrice > 0 && (row.price == null || row.price > maxPrice)) { hidden++; priceHidden++; continue; }
-    if (!row.detailChecked || row.price == null || row.stock === 'unknown' || row.kind === 'unknown') review.push(row);
+    if (!row.detailChecked || (row.price == null && row.priceState !== 'unavailable') || row.stock === 'unknown' || row.kind === 'unknown') review.push(row);
     else main.push(row);
   }
   return { main, review, hidden, priceHidden, priceUnknown };
@@ -110,7 +110,7 @@ function renderCard(row, compact = false) {
       <div class="checked">${escapeHtml(reasons.join('・') || `${time ? time + ' ' : ''}商品ページで確認`)}</div>
       ${compact ? '</details>' : ''}
     </div>
-    <div class="priceCell"><div class="price">${formatPrice(row.price)}</div>${renderComparison(row)}<div class="checked">送料別・送料未確認</div></div>
+    <div class="priceCell"><div class="price">${row.priceState === 'unavailable' ? '現在購入不可・価格未設定' : formatPrice(row.price)}</div>${renderComparison(row)}<div class="checked">送料別・送料未確認</div></div>
     <div class="stockCell">${stockBadge(row.stock, row.stockQty)}</div>
     <a class="open" href="${escapeAttr(row.url)}" target="_blank" rel="noopener noreferrer">商品ページ ↗</a>
     ${conditions?.length ? `<div class="conditions">${escapeHtml(conditions.join('・'))}</div>` : ''}
@@ -135,8 +135,9 @@ export function renderStatuses(container, stores, storeResults, searching) {
     const labels = { ok: '候補あり', no_hit: '候補を抽出できず', blocked: '取得拒否', error: 'エラー' };
     const label = result.status === 'no_hit' && result.coverage?.noHitConfirmed ? '確認範囲で該当なし' : labels[result.status] || result.status || '不明';
     const c = result.coverage;
-    const message = [result.error, result.results?.length ? `${result.results.length}候補` : '', c ? `${c.pagesRead}ページ・詳細${c.detailChecks}件確認` : '',
-      describeSearchEvidence(result), c?.fallback === 'box_keyword' ? 'BOXで絞り込む補助検索を実施' : '', ...(c?.partialReasons || [])].filter(Boolean).join('／');
+    const message = [result.error, result.resumeError, result.results?.length ? `${result.results.length}候補` : '', c ? `${c.pagesRead}ページ取得・詳細${c.detailChecks}件確認` : '',
+      describeSearchEvidence(result), c?.fallback === 'box_keyword' ? 'BOXで絞り込む補助検索を実施' : '', ...(c?.notes || []),
+      result.continuations?.length ? `追加確認の残り${result.continuations.length}件` : '', ...(c?.partialReasons || [])].filter(Boolean).join('／');
     return statusRow(store, label, message, result.manualSearchUrl || store.home);
   }).join('');
 }
@@ -145,6 +146,7 @@ export function describeSearchEvidence(result) {
   if (result.status !== 'no_hit') return '';
   const c = result.coverage, evidence = c?.listing;
   if (!evidence) return '';
+  if (c.categories?.length >= 2 && c.categories.every(x=>x.complete)) return '確認した新品一覧に一致する掲載なし';
   if (c.searchPages?.length && c.searchPages.every(p => p.outcome === 'empty')) return '店舗の検索結果が0件。売り切れを意味するものではありません';
   if (c.candidateCount > 0) return '商品詳細を確認した結果、検索条件に合う候補なし';
   if (evidence.excludedSingles > 0) return '確認した範囲ではシングル等を除外し、BOX候補なし';
@@ -158,8 +160,9 @@ export function summarizeStoreChecks(results) {
   let noHit = 0, partial = 0, failed = 0;
   for (const r of results) {
     if (r.status === 'blocked' || r.status === 'error') { failed++; continue; }
-    if (r.status === 'no_hit' && r.coverage?.noHitConfirmed && !r.coverage?.partialReasons?.length) noHit++;
-    if (r.coverage?.partialReasons?.length || (r.status === 'no_hit' && !r.coverage?.noHitConfirmed)) partial++;
+    const incomplete = r.continuations?.length || r.resumeError || r.coverage?.partialReasons?.length;
+    if (r.status === 'no_hit' && r.coverage?.noHitConfirmed && !incomplete) noHit++;
+    if (incomplete || (r.status === 'no_hit' && !r.coverage?.noHitConfirmed)) partial++;
   }
   return { noHit, partial, failed };
 }
