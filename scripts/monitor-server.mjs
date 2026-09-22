@@ -1,3 +1,4 @@
+import { createAccessController } from '../src/access-limits.js';
 // 有料サーバーへの移行用。外部ライブラリを増やさずNode.js 24で動かす。
 // Cloudflare版と同じ監視エンジン・商品解析・操作画面を使用する。
 import http from 'node:http';
@@ -55,7 +56,12 @@ if(process.env.MONITOR_INTERVAL_SECONDS){const n=Number(process.env.MONITOR_INTE
 await save(state);
 let tail=Promise.resolve();
 function serial(fn){const result=tail.then(fn);tail=result.catch(()=>{});return result;}
-const io=makeMonitorIO(save);
+const accessPath=join(dir,'access-budget.json');
+const ACCESS_CONTROL=createAccessController({
+  async load(){try{return JSON.parse(await readFile(accessPath,'utf8'));}catch(e){if(e.code==='ENOENT')return {};throw e;}},
+  async save(value){const temp=accessPath+'.tmp';const f=await open(temp,'w',0o600);try{await f.writeFile(JSON.stringify(value));await f.sync();}finally{await f.close();}await rename(temp,accessPath);}
+});
+const io=makeMonitorIO(save,{ACCESS_CONTROL});
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8'};
 const server=http.createServer(async(req,res)=>{
   try {
@@ -81,7 +87,7 @@ const server=http.createServer(async(req,res)=>{
         }else if(request.method!=='GET')return monitorResponse({error:'未対応の操作'},405);
         return monitorResponse(publicMonitor(state,10));
       });
-    }else if(url.pathname.startsWith('/api/'))response=await worker.fetch(request,{});
+    }else if(url.pathname.startsWith('/api/'))response=await worker.fetch(request,{ACCESS_CONTROL});
     else {
       const file=resolve(root,'public','.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname));
       if(!file.startsWith(join(root,'public')+'/')||!mime[extname(file)])response=new Response('Not found',{status:404});

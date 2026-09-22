@@ -74,7 +74,7 @@ test('通知失敗を保存して再試行。送れたら繰り返さない',asy
 });
 test('通知待ちの間に売切・取得失敗なら古い在庫を送らない',async()=>{
   const {s,t}=fixture();s.jobs=[];s.webhook=webhook;observe(s,t,row,1000000);let sent=0;
-  await runMonitorTick(s,io(s,{now:()=>1060000,check:async()=>({error:'失敗'}),notify:async()=>{sent++;}}));assert.equal(sent,0);
+  await runMonitorTick(s,io(s,{now:()=>1072000,check:async()=>({error:'失敗'}),notify:async()=>{sent++;}}));assert.equal(sent,0);
   t.nextAt=0;await runMonitorTick(s,io(s,{now:()=>1120000,check:async()=>({row:{...row,stock:'out_of_stock'}}),notify:async()=>{sent++;}}));assert.equal(sent,0);assert.equal(s.events[0].delivery,'cancelled');
 });
 test('新規商品発見は続き位置を引き継ぎ、商品ページを登録',async()=>{

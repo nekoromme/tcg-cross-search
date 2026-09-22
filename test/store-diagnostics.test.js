@@ -55,7 +55,7 @@ test('different product identifiers in query parameters survive worker deduplica
     if (u.pathname.endsWith('shopbrand.html')) return new Response(listing + listing.replace('211454', '211455'));
     return new Response(detail);
   });
-  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=cardmax&q=GD04'), {})).json();
+  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=cardmax&q=GD04'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(data.results.length, 2);
   assert.equal(data.results[0].price, 5808);
 });
@@ -90,10 +90,10 @@ test('only explicit search-empty evidence is accepted; carts and templates are i
 test('empty pages and retrieval failures are counted separately without hiding uncertainty', async t => {
   const mock=t.mock.method(globalThis, 'fetch', async()=>new Response('<p>お探しの商品は見つかりませんでした</p>'));
   const request=new Request('https://app.test/api/search?store=193&q=GD04');
-  const empty=await (await worker.fetch(request, {})).json();
+  const empty=await (await worker.fetch(request, {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(empty.coverage.noHitConfirmed,true);
   mock.mock.mockImplementation(async()=>new Response('<main></main>'));
-  const unknown=await (await worker.fetch(request, {})).json();
+  const unknown=await (await worker.fetch(request, {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(unknown.coverage.noHitConfirmed,false);
   assert.deepEqual(summarizeStoreChecks([empty,unknown,{status:'blocked'}]),{noHit:1,partial:1,failed:1});
   const limited={...empty,coverage:{...empty.coverage,partialReasons:['検索結果の続きは未確認']}};
@@ -104,12 +104,12 @@ test('detail failures retain HTTP status or timeout instead of a generic message
   const mock=t.mock.method(globalThis, 'fetch', async url=>new URL(url).pathname.endsWith('shopbrand.html')
     ? new Response(listing) : new Response('Unavailable',{status:503}));
   const request=new Request('https://app.test/api/search?store=cardmax&q=GD04');
-  const http=await (await worker.fetch(request,{})).json();
+  const http=await (await worker.fetch(request, {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.match(http.results[0].reviewReason,/503/);
   mock.mock.mockImplementation(async url=>{
     if(new URL(url).pathname.endsWith('shopbrand.html')) return new Response(listing);
     throw new DOMException('deadline','AbortError');
   });
-  const timeout=await (await worker.fetch(request,{})).json();
+  const timeout=await (await worker.fetch(request, {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.match(timeout.coverage.detailFailures[0].reason,/タイムアウト/);
 });

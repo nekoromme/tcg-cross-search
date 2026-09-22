@@ -7,10 +7,11 @@ import { productKind } from '../public/product-kind.js';
 import { matchesQuery, searchTerms, identifyProduct, comparePrice } from '../public/catalog.js';
 import { findNextSearchPage } from './pagination.js';
 import { routeMonitor } from './monitor-service.js';
+import { networkGuard } from './access-limits.js';
 import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.8.2';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -18,7 +19,7 @@ const SEARCH_HTML_MAX_BYTES = 1_500_000;
 const DETAIL_HTML_MAX_BYTES = 900_000;
 
 const HTTP_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.8.1; +https://github.com/nekoromme/tcg-cross-search)',
+  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.8.2; +https://github.com/nekoromme/tcg-cross-search)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ja,en-US;q=0.8,en;q=0.6',
 };
@@ -40,7 +41,8 @@ export default {
     }
 
     if (url.pathname === '/api/search') {
-      return handleStoreSearch(request);
+      if(!env.MONITORS && !env.ACCESS_CONTROL)return jsonResponse({error:'通信上限の保存先が未設定です'},503);
+      return handleStoreSearch(request, networkGuard(env));
     }
 
     if (env.ASSETS) return env.ASSETS.fetch(request);
@@ -48,7 +50,7 @@ export default {
   },
 };
 
-export async function handleStoreSearch(request) {
+export async function handleStoreSearch(request, guard = null) {
   const startedAt = Date.now();
   const url = new URL(request.url);
   const storeId = url.searchParams.get('store') || '';
@@ -71,7 +73,7 @@ export async function handleStoreSearch(request) {
   const manualSearchUrl = buildStoreSearchUrl(store, terms[0]);
   const pageLimit = resumeUrl ? 1 : url.searchParams.get('depth') === 'wide' ? 3 : 1;
   // 検索＋詳細を合わせて25秒・最大12通信で打ち切る。負荷を無制限に増やさない。
-  const budget = { deadline: Date.now() + 25_000, requests: 0 };
+  const budget = { deadline: Date.now() + 25_000, requests: 0, guard };
   const baseResult = {
     version: APP_VERSION,
     query,
@@ -284,10 +286,18 @@ export async function handleStoreSearch(request) {
     baseResult.error = safeErrorMessage(error);
   }
 
+  if(budget.limitHit) {
+    // 通信制限は在庫なしと区別し、現在の確認位置を残す。
+    baseResult.accessLimited=true; baseResult.retryAt=budget.limitHit.retryAt;
+    baseResult.error=budget.limitHit.message;
+    baseResult.coverage.partialReasons.push(budget.limitHit.message);
+    baseResult.continuations.unshift({start:resumeUrl||'',offset:detailOffset});
+    if(!baseResult.results.length)baseResult.status='error';
+  }
   baseResult.elapsedMs = Date.now() - startedAt;
   // すべての取得ページで根拠があった場合だけ「該当なし」を確定する。
   // 続きのページや通信エラーがある場合の未確認フラグは別に保持する。
-  baseResult.coverage.noHitConfirmed = baseResult.status === 'no_hit' && baseResult.coverage.searchPages.length > 0
+  baseResult.coverage.noHitConfirmed = baseResult.status === 'no_hit' && !budget.limitHit && baseResult.coverage.searchPages.length > 0
     && (baseResult.coverage.searchPages.every(p => p.outcome !== 'unreadable')
       || (baseResult.coverage.categories.length === 2 && baseResult.coverage.categories.every(c => c.complete)));
   baseResult.coverage.requests = budget.requests;
@@ -300,7 +310,7 @@ export async function handleStoreSearch(request) {
     categories: baseResult.coverage.categories, remainingTasks: baseResult.continuations.length,
     detailFailureReasons: baseResult.coverage.detailFailures.map(f => f.reason), elapsedMs: baseResult.elapsedMs }));
   const response = jsonResponse(baseResult);
-  response.headers.set('Cache-Control', forceRefresh ? 'no-store' : `public, max-age=${CACHE_SECONDS}`);
+  response.headers.set('Cache-Control', forceRefresh || budget.limitHit ? 'no-store' : `public, max-age=${CACHE_SECONDS}`);
   return response;
 }
 
@@ -311,6 +321,7 @@ function recordSearchPage(coverage, response, stats, candidates) {
 
 export async function fetchHtml(url, maxBytes, budget) {
   if (budget.requests >= 12 || Date.now() >= budget.deadline) throw new Error('検索の通信・時間上限に達しました');
+  let release;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort('timeout'), Math.min(FETCH_TIMEOUT_MS, budget.deadline - Date.now()));
   try {
@@ -320,6 +331,10 @@ export async function fetchHtml(url, maxBytes, budget) {
     for (let redirect = 0; redirect < 4; redirect++) {
       if (budget.requests >= 12) throw new Error('検索の通信上限に達しました');
       budget.requests++;
+      if(budget.guard) {
+        try {release=await budget.guard(target);}
+        catch(error){if(error.accessLimited)budget.limitHit=error;throw error;}
+      }
       response = await fetch(target, {
       method: 'GET',
       headers: HTTP_HEADERS,
@@ -330,6 +345,7 @@ export async function fetchHtml(url, maxBytes, budget) {
       if (![301,302,303,307,308].includes(response.status)) break;
       const location = response.headers.get('location');
       await response.body?.cancel();
+      await release?.(); release=null;
       if (!location) throw new Error('転送先を確認できませんでした');
       const next = new URL(location, target);
       if (next.protocol !== 'https:' || next.username || next.password || next.port || next.hostname.replace(/^www\./,'') !== initial.hostname.replace(/^www\./,'')) throw new Error('店舗外への転送のため手動確認が必要です');
@@ -341,6 +357,7 @@ export async function fetchHtml(url, maxBytes, budget) {
     return { status: response.status, finalUrl: response.url || target, text, truncated: bytes.byteLength >= maxBytes };
   } finally {
     clearTimeout(timer);
+    await release?.();
   }
 }
 

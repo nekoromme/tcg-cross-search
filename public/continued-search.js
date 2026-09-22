@@ -11,6 +11,10 @@ export async function collectStoreResults(fetchPage, previous = null, onProgress
     if (seen.has(key)) continue;
     try {
       const page = await fetchPage(task);
+      if(page.accessLimited) {
+        result=mergeStorePage(result,page); result.accessLimited=true; result.retryAt=page.retryAt; result.resumeError=page.error;
+        queue.unshift(task); onProgress(result); break;
+      }
       if (page.status === 'error' || page.status === 'blocked') {
         if (!result) return { ...page, continuations: [task], completedTasks: [...seen] };
         throw new Error(page.error || '追加確認を取得できませんでした');

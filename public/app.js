@@ -1,7 +1,7 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.8.1';
+import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.8.2';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
-import { collectStoreResults } from './continued-search.js?v=0.8.1';
+import { collectStoreResults } from './continued-search.js?v=0.8.2';
 import { createRequestQueue } from './request-queue.js';
 
 const els = {
@@ -152,7 +152,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.8.1',
+          v: '0.8.2',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
@@ -215,7 +215,8 @@ async function runStoreBatches(store, params, previous = null, requestQueue = cr
 function updateContinueButton() {
   const count = [...storeResults.values()].filter(r=>r.continuations?.length).length;
   els.continueButton.hidden = !count;
-  els.continueButton.disabled = searching;
+  const limited=[...storeResults.values()].filter(r=>r.accessLimited && r.retryAt>Date.now());
+  els.continueButton.disabled = searching || limited.length>0;
   els.continueButton.textContent = `残りを追加確認（${count}店）`;
 }
 
@@ -388,3 +389,5 @@ document.querySelector('#monitorSearch').addEventListener('click', () => {
     location.href='/monitor.html';
   } catch { els.progress.textContent='監視条件を一時保存できません。自動在庫監視の画面で入力してください。'; }
 });
+
+setInterval(()=>{if(!searching)updateContinueButton();},5000);

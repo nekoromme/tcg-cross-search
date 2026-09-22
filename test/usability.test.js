@@ -105,7 +105,7 @@ test('API revalidates details and never fills unknown stock from listing guesses
     return new Response('<h1>GD02 BOX</h1><span>100円 在庫あり</span>');
   };
   try {
-    const response = await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD03&refresh=1'), {});
+    const response = await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD03&refresh=1'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})});
     const data = await response.json();
     assert.equal(data.results.length, 1);
     assert.equal(data.results[0].stock, 'unknown');
@@ -129,3 +129,4 @@ test('whole-card links keep their own price but strip price and stock from title
   assert.equal(result.price, 2500);
   assert.equal(result.stock, 'out_of_stock');
 });
+
