@@ -121,6 +121,8 @@ export const STORES = [
   {
     id: 'tier1_gundam',
     boxKeywordFallback: true,
+    // 実際の商品名は「ボックス」。英字BOXではGD04等が検索から漏れる。
+    boxKeyword: 'ボックス',
     games: ['gundam'],
     name: 'ティアワン ガンダム',
     home: 'https://tier-one.jp/',
@@ -178,6 +180,8 @@ export function buildStoreSearchUrl(store, query) {
   for (const [key, value] of Object.entries(store.fixed || {})) {
     url.searchParams.set(key, String(value));
   }
-  url.searchParams.set(store.field, query);
+  // ユーザーがBOXを付けた検索でも、店が使う販売単位の表記へそろえる。
+  const term = store.boxKeyword ? String(query).replace(/(^|\s)BOX(?=\s|$)/gi, `$1${store.boxKeyword}`) : query;
+  url.searchParams.set(store.field, term);
   return url.toString();
 }

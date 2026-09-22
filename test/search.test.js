@@ -12,7 +12,7 @@ test('builds encoded store search URLs from a fixed whitelist', () => {
   const store = STORES.find((item) => item.id === 'tier1_gundam');
   const url = new URL(buildStoreSearchUrl(store, 'GD03 BOX'));
   assert.equal(url.origin, 'https://tier-one.jp');
-  assert.equal(url.searchParams.get('search_keyword'), 'GD03 BOX');
+  assert.equal(url.searchParams.get('search_keyword'), 'GD03 ボックス');
 });
 
 test('normalizes Japanese/ASCII variants', () => {

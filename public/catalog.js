@@ -36,6 +36,13 @@ export function matchesQuery(title, query) {
   return createQueryMatcher(query)(title);
 }
 export function createQueryMatcher(query) {
+  // 「GD03 BOX」も正式名だけの掲載と照合する。BOX条件を付けた途端に
+  // 型番・別名の対応が消えるのを防ぎ、単品パックは引き続き除外する。
+  const boxBase = boxQueryBase(query);
+  if (boxBase) {
+    const matchesProduct = createQueryMatcher(boxBase);
+    return title => matchesProduct(title) && ['box', 'bundle', 'carton'].includes(productKind(title));
+  }
   const q = normalized(query);
   const wanted = identifyProduct(query);
   const recognized = wanted && [wanted.code, ...wanted.aliases].filter(Boolean).some(a => normalized(a) === q);
@@ -53,12 +60,20 @@ export function createQueryMatcher(query) {
   };
 }
 export function searchTerms(query) {
+  const boxBase = boxQueryBase(query);
+  if (boxBase) return searchTerms(boxBase).map(term => `${term} BOX`);
   const p = identifyProduct(query);
   if (!p) return [String(query).normalize('NFKC')];
   const q = normalized(query);
   if (![p.code, ...(p.aliases || [])].filter(Boolean).some(a => normalized(a) === q)) return [query];
   // 店の検索には型番か正式名を使う。別表記での再検索は候補が無い場合に1回だけ。
   return [...new Set([p.searchTerm || p.name, p.name])];
+}
+
+function boxQueryBase(query) {
+  const match = String(query || '').normalize('NFKC').match(/^(.+?)\s+(?:BOX|ボックス|1\s*箱)$/i);
+  // 登録済み商品だけを展開する。未登録の型番や追加条件は勝手に省かない。
+  return match && identifyProduct(match[1]) ? match[1] : '';
 }
 export function comparePrice(row) {
   const product = identifyProduct(row.title);
