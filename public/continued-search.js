@@ -49,7 +49,9 @@ export function mergeStorePage(previous, page) {
   const results=[...rows.values()];
   return { ...page, manualSearchUrl: previous.manualSearchUrl, results,
     status: results.length ? 'ok' : 'no_hit', resumeError: '',
+    elapsedMs:(previous.elapsedMs||0)+(page.elapsedMs||0),
     coverage: { ...b, pagesRead:(a.pagesRead||0)+(b.pagesRead||0), detailChecks:(a.detailChecks||0)+(b.detailChecks||0),
+      requests:(a.requests||0)+(b.requests||0), reusedListings:(a.reusedListings||0)+(b.reusedListings||0),
       noHitConfirmed:Boolean(a.noHitConfirmed && b.noHitConfirmed),
       notes:[...new Set([...(a.notes||[]),...(b.notes||[])])],
       categories:[...(a.categories||[]),...(b.categories||[])],
