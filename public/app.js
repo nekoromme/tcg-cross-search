@@ -1,7 +1,7 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.9.0';
+import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.9.1';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
-import { collectStoreResults } from './continued-search.js?v=0.9.0';
+import { collectStoreResults } from './continued-search.js?v=0.9.1';
 import { createRequestQueue } from './request-queue.js';
 
 const els = {
@@ -152,7 +152,7 @@ async function startSearch() {
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.9.0',
+          v: '0.9.1',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
