@@ -136,6 +136,7 @@ export function renderStatuses(container, stores, storeResults, searching) {
     const label = result.status === 'no_hit' && result.coverage?.noHitConfirmed ? '確認範囲で該当なし' : labels[result.status] || result.status || '不明';
     const c = result.coverage;
     const message = [result.error, result.resumeError, result.results?.length ? `${result.results.length}候補` : '', c ? `${c.pagesRead}ページ取得・詳細${c.detailChecks}件確認` : '',
+      result.elapsedMs ? `処理${(result.elapsedMs/1000).toFixed(1)}秒` : '', c?.reusedListings ? '取得済みの候補一覧を再利用' : '',
       describeSearchEvidence(result), c?.fallback === 'box_keyword' ? 'BOXで絞り込む補助検索を実施' : '', ...(c?.notes || []),
       result.continuations?.length ? `追加確認の残り${result.continuations.length}件` : '', ...(c?.partialReasons || [])].filter(Boolean).join('／');
     return statusRow(store, label, message, result.manualSearchUrl || store.home);

@@ -1,7 +1,8 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.8.0';
+import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.8.1';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
-import { collectStoreResults } from './continued-search.js';
+import { collectStoreResults } from './continued-search.js?v=0.8.1';
+import { createRequestQueue } from './request-queue.js';
 
 const els = {
   form: document.querySelector('#searchForm'),
@@ -42,6 +43,7 @@ let storeResults = new Map();
 let searching = false;
 let currentRun = 0;
 let hasSearched = false;
+let searchStartedAt = 0, firstResultMs = null;
 let activeStores = [];
 const lastParams = new Map();
 const favorites = createFavoritesStore();
@@ -104,6 +106,7 @@ function displayOptions() {
 function updateResults() {
   renderRows(els.results, els.resultCount, storeResults, { ...displayOptions(), searching, hasSearched,
     reviewPanel: els.reviewPanel, reviewSummary: els.reviewSummary, reviewContainer: els.reviewContainer });
+  if (searching && firstResultMs == null && els.results.querySelector('article')) firstResultMs = performance.now() - searchStartedAt;
 }
 
 async function startSearch() {
@@ -127,6 +130,7 @@ async function startSearch() {
   lastParams.clear();
   els.continueButton.hidden = true;
   searching = true;
+  searchStartedAt = performance.now(); firstResultMs = null;
   refreshFavorites();
   hasSearched = true;
   els.reviewPanel.open = false;
@@ -141,22 +145,20 @@ async function startSearch() {
   updateProgress(completed);
   renderStatuses(els.statuses, activeStores, storeResults, searching);
 
-  const queue = [...activeStores];
-  const workers = Array.from({ length: Math.min(6, queue.length) }, async () => {
-    while (queue.length && runId === currentRun) {
-      const store = queue.shift();
+  const requestQueue = createRequestQueue(6);
+  const workers = activeStores.map(async store => {
       try {
         const params = new URLSearchParams({
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.8.0',
+          v: '0.8.1',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
         if (cacheBust) params.set('_bust', cacheBust);
         lastParams.set(store.id, params);
-        const data = await runStoreBatches(store, params);
+        const data = await runStoreBatches(store, params, null, requestQueue);
         storeResults.set(store.id, data);
       } catch (error) {
         storeResults.set(store.id, {
@@ -173,7 +175,6 @@ async function startSearch() {
         updateResults();
         renderStatuses(els.statuses, activeStores, storeResults, searching);
       }
-    }
   });
 
   await Promise.all(workers);
@@ -191,11 +192,12 @@ async function startSearch() {
   updateContinueButton();
 }
 
-async function runStoreBatches(store, params, previous = null) {
-  return collectStoreResults(async task => {
+async function runStoreBatches(store, params, previous = null, requestQueue = createRequestQueue(6)) {
+  return collectStoreResults(task => requestQueue.run(async () => {
     const next = new URLSearchParams(params);
     if (task.start) next.set('start', task.start);
     next.set('offset', String(task.offset || 0));
+    if (task.snapshot) next.set('snapshot', task.snapshot);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 35_000);
     try {
@@ -203,7 +205,7 @@ async function runStoreBatches(store, params, previous = null) {
       if (!response.ok) throw new Error(`検索サービスから HTTP ${response.status} が返りました`);
       return await response.json();
     } finally { clearTimeout(timeout); }
-  }, previous, partial => {
+  }), previous, partial => {
     storeResults.set(store.id, partial);
     updateResults();
     renderStatuses(els.statuses, activeStores, storeResults, searching);
@@ -224,17 +226,16 @@ async function resumeRemaining() {
   els.gameFilter.disabled = true;
   els.searchDepth.disabled = true;
   updateContinueButton();
+  searchStartedAt = performance.now(); firstResultMs = null;
   const queue = activeStores.filter(s=>storeResults.get(s.id)?.continuations?.length && lastParams.has(s.id));
   // 同じ店舗への同時アクセスを増やさず、初回と同じ検索条件の続きを確認する。
-  await Promise.all(Array.from({length:Math.min(6,queue.length)},async()=>{
-    while(queue.length) {
-      const store=queue.shift();
+  const requestQueue = createRequestQueue(6);
+  await Promise.all(queue.map(async store=>{
       try {
         const params=new URLSearchParams(lastParams.get(store.id));
         params.set('refresh','1'); params.set('_bust',String(Date.now()));
-        storeResults.set(store.id,await runStoreBatches(store,params,storeResults.get(store.id)));
+        storeResults.set(store.id,await runStoreBatches(store,params,storeResults.get(store.id),requestQueue));
       } catch(error) { storeResults.get(store.id).resumeError=error.message; }
-    }
   }));
   searching = false;
   els.searchButton.disabled = false;
@@ -249,6 +250,8 @@ async function resumeRemaining() {
 function updateProgress(completed, done = false) {
   const { noHit, partial, failed } = summarizeStoreChecks(storeResults.values());
   els.progress.textContent = done ? `検索完了 ${completed}/${activeStores.length}${noHit ? `・確認範囲で該当なし ${noHit}店` : ''}${partial ? `・一部未確認 ${partial}店` : ''}${failed ? `・取得失敗 ${failed}店` : ''}` : `検索中 ${completed}/${activeStores.length}`;
+  if (done) els.progress.textContent += `・${((performance.now()-searchStartedAt)/1000).toFixed(1)}秒`;
+  if (firstResultMs != null) els.progress.textContent += `（最初の結果 ${(firstResultMs/1000).toFixed(1)}秒）`;
 }
 
 function refreshHistory() {

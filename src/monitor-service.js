@@ -43,7 +43,7 @@ export function makeMonitorIO(save) {
         detailChecked:Boolean(parsed.title),priceComparable:parsed.priceComparable,priceIssue:parsed.priceIssue},status:200};
     },
     async discover(rule,storeId,task) {
-      const params=new URLSearchParams({store:storeId,q:rule.query,sealed:'1',refresh:'1',depth:'standard',start:task.start||'',offset:String(task.offset||0)});
+      const params=new URLSearchParams({store:storeId,q:rule.query,sealed:'1',refresh:'1',depth:'standard',start:task.start||'',offset:String(task.offset||0),snapshot:task.snapshot||''});
       return (await handleStoreSearch(new Request(`https://monitor.internal/api/search?${params}`))).json();
     },
     notify:(webhook,event)=>sendDiscord(webhook,{...event,storeName:STORE_MAP.get(event.storeId)?.name}),
