@@ -26,22 +26,25 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
   const queryNorm = normalizeText(query);
   const tokens = makeQueryTokens(query);
   const matchesQuery = createQueryMatcher(query);
-  const anchorRe = /<a\b([^>]*?)href\s*=\s*["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi;
+  // 古い通販ページには href=/shop/... のように引用符のないリンクが残っている。
+  // ブラウザーでは普通に開けるため、HTMLとして有効な両方の書き方を読む。
+  const anchorRe = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
   const byUrl = new Map();
   let match;
   let inspected = 0;
 
   while ((match = anchorRe.exec(html)) && inspected < 6000) {
     inspected += 1;
-    const href = match[2];
+    const anchorAttrs = parseAttributes(match[1]);
+    const href = anchorAttrs.href;
     if (!href || href.startsWith('#') || /^javascript:/i.test(href) || /^mailto:/i.test(href)) continue;
     const url = absoluteUrl(baseUrl, href);
     if (!isLikelyProductUrl(url)) continue;
     if (new URL(url).origin !== new URL(baseUrl).origin) continue;
 
     const fullAnchor = match[0];
-    const attrsText = `${match[1] || ''} ${match[3] || ''}`;
-    let title = cleanText(match[4]);
+    const attrsText = match[1] || '';
+    let title = cleanText(match[2]);
     if (!title || title.length < 2) {
       const img = fullAnchor.match(/<img\b[^>]*>/i);
       if (img) {
@@ -72,9 +75,9 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
 
     // 次の商品リンクに達したら切る。隣の商品の価格・在庫を混ぜない。
     const tail = html.slice(anchorRe.lastIndex, anchorRe.lastIndex + 1800);
-    const nextProduct = [...tail.matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi)]
+    const nextProduct = [...tail.matchAll(/<a\b([^>]*)>/gi)]
       .find((link) => {
-        const next = absoluteUrl(baseUrl, link[1]);
+        const next = absoluteUrl(baseUrl, parseAttributes(link[1]).href || '');
         return isLikelyProductUrl(next) && normalizeUrlKey(next) !== normalizeUrlKey(url);
       });
     const context = cleanText(tail.slice(0, nextProduct?.index ?? tail.length));

@@ -131,7 +131,8 @@ function findProductHeading(html) {
   const headings = [...html.matchAll(/<h[1-6]\b([^>]*)>([\s\S]*?)<\/h[1-6]>/gi)];
   const named = headings.find((heading) => {
     const attrs = parseAttributes(heading[1]);
-    return /(?:product|item)[_-](?:name|title)/i.test(`${attrs.id || ''} ${attrs.class || ''}`);
+    // CARDMAXの M_itemName のような区切りなしの表記にも対応する。
+    return /(?:product|item)[_-]?(?:name|title)/i.test(`${attrs.id || ''} ${attrs.class || ''}`);
   });
   if (named) return named;
   const metaTitle = normalizeText(getMetaContent(html, 'og:title'));
