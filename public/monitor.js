@@ -1,6 +1,6 @@
 // 合言葉はURLへ入れない。認証ヘッダーでのみ送るので履歴・リンクに残らない。
 const KEY='tcg-monitor-key-v1', $=id=>document.getElementById(id);
-let key='', state=null, busy=false, draft=null, storeNames={};
+let key='', state=null, busy=false, draft=null, storeNames={}, intervalDirty=false;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time=value=>value?new Date(value).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}):'未確認';
 const stock={in_stock:'在庫あり',out_of_stock:'在庫なし',preorder:'予約受付',unknown:'在庫不明'};
@@ -15,13 +15,13 @@ async function api(body) {
 async function perform(fn){if(busy)return;busy=true;try{await fn();}catch(e){message(e.message,true);}finally{busy=false;}}
 function render() {
   const active=state.rules.filter(r=>r.enabled).length;
-  $('overview').textContent=`${state.enabled?'稼働中':'全体を一時停止中'}／有効な条件 ${active}件／商品ページ ${state.targets.length}件／最終巡回 ${time(state.lastTick)}`;
+  $('overview').textContent=`${state.enabled?(active?'稼働中':'待機（有効な条件なし）'):'全体を一時停止中'}／有効な条件 ${active}件／商品ページ ${state.targets.length}件／最終巡回 ${time(state.lastTick)}`;
   $('pauseAll').textContent=state.enabled?'全体を一時停止':'全体を再開';
   if(state.minInterval===10&&!$('interval').querySelector('option[value="10"]'))$('interval').insertAdjacentHTML('afterbegin','<option value="10">10秒（移行先サーバー）</option>');
-  if(document.activeElement!==$('interval'))$('interval').value=String(state.intervalSeconds);
+  if(!intervalDirty)$('interval').value=String(state.intervalSeconds);
   $('notificationState').textContent=state.notificationConfigured?'通知先は設定済み。空欄のまま保存すると現在の通知先を維持します。':'通知先は未設定。現在は画面内の記録のみです。';
   $('rules').innerHTML=state.rules.map(r=>`<article class="monitorCard"><strong>${esc(r.config.query)}：${r.enabled?'監視中':'一時停止'}</strong><p>${r.config.unit==='box'?'BOXのみ':'BOX＋カートン・複数BOX'}／${r.config.priceLimit==='all'?'定価制限なし':`定価の${esc(r.config.priceLimit)}%まで`}${r.config.maxPrice?`／上限${r.config.maxPrice.toLocaleString()}円`:''}／${r.config.includePreorders?'予約を含む':'即納のみ'}／定価不明${r.config.includeUnknown?'も含む':'は除外'}／${r.config.storeIds.length}店</p><div class="monitorActions"><button data-toggle="${r.id}" type="button">${r.enabled?'一時停止':'再開'}</button><button data-delete="${r.id}" type="button">この条件を削除</button></div></article>`).join('')||'<p>まだ登録されていません。</p>';
-  $('targets').innerHTML=state.targets.map(t=>`<article class="monitorCard"><strong>${esc(storeNames[t.storeId]||t.storeId)}</strong><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.title)}</a><p>${t.error?'今回：確認失敗／前回確認：':''}${esc(stock[t.lastGood?.stock]||'未確認')}・${t.lastGood?.price>0?t.lastGood.price.toLocaleString()+'円':'価格未設定・未確認'}<br>最終取得 ${time(t.lastChecked)}／正常確認 ${time(t.lastGoodAt)}<br>次回予定 ${state.enabled?time(t.nextAt):'停止中'}</p>${t.error?`<p class="monitorError">${esc(t.error)}（連続${t.failures}回）</p>`:''}</article>`).join('')||'<p>検索で商品ページが見つかると、ここに追加されます。</p>';
+  $('targets').innerHTML=state.targets.map(t=>`<article class="monitorCard"><strong>${esc(storeNames[t.storeId]||t.storeId)}</strong><a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.title)}</a><p>${t.error?'今回：確認失敗／前回確認：':''}${esc(stock[t.lastGood?.stock]||'未確認')}・${t.lastGood?.price>0?t.lastGood.price.toLocaleString()+'円':'価格未設定・未確認'}<br>最終取得 ${time(t.lastChecked)}／正常確認 ${time(t.lastGoodAt)}<br>次回予定 ${state.enabled&&state.rules.some(r=>r.enabled&&t.ruleIds.includes(r.id))?time(t.nextAt):'停止中'}</p>${t.error?`<p class="monitorError">${esc(t.error)}（連続${t.failures}回）</p>`:''}</article>`).join('')||'<p>検索で商品ページが見つかると、ここに追加されます。</p>';
   $('events').innerHTML=state.events.map(e=>`<article class="monitorCard"><strong>${esc(stock[e.stock])}・${e.price.toLocaleString()}円（送料別）</strong><a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${esc(e.title)}</a><p>${esc(storeNames[e.storeId]||e.storeId)}／${time(e.at)}<br>${esc(delivery[e.delivery]||e.delivery)}</p></article>`).join('')||'<p>条件を満たす在庫・予約を確認すると記録します。</p>';
   $('jobs').innerHTML=state.jobs.map(j=>`<div class="monitorCard"><strong>${esc(state.rules.find(r=>r.id===j.ruleId)?.config.query)}／${esc(storeNames[j.storeId]||j.storeId)}</strong><p>前回 ${time(j.lastAt)}／${j.queue.length?'続きの確認待ち':'次の掲載確認を待機'}${j.error?`<br><span class="monitorError">${esc(j.error)}</span>`:''}</p></div>`).join('')||'<p>監視条件の登録後に順番に検索します。</p>';
   if(state.error)message(state.error,true);
@@ -37,7 +37,8 @@ $('addForm').onsubmit=event=>{event.preventDefault();perform(async()=>{
   const rule={query:$('monitorQuery').value,game:$('monitorGame').value,unit:$('monitorUnit').value,priceLimit:$('monitorPrice').value,maxPrice:$('monitorMax').value||null,includePreorders:$('monitorPreorder').checked,includeUnknown:$('monitorUnknown').checked};
   await api({action:'add',rule,seeds:draft?.seeds||[]});draft=null;sessionStorage.removeItem('tcg-monitor-draft');$('addPanel').open=false;message(state.enabled?'監視を登録しました。商品ページを順に確認します。':'登録しました。全体が停止中なので、再開ボタンで開始してください。');
 });};
-$('settingsForm').onsubmit=event=>{event.preventDefault();perform(async()=>{const body={action:'settings',intervalSeconds:Number($('interval').value)};if($('webhook').value.trim())body.webhook=$('webhook').value.trim();await api(body);$('webhook').value='';message('設定を保存しました');});};
+$('interval').onchange=()=>{intervalDirty=true;};
+$('settingsForm').onsubmit=event=>{event.preventDefault();perform(async()=>{const body={action:'settings',intervalSeconds:Number($('interval').value)};if($('webhook').value.trim())body.webhook=$('webhook').value.trim();await api(body);intervalDirty=false;$('webhook').value='';message('設定を保存しました');});};
 $('testNotification').onclick=()=>perform(async()=>{await api({action:'test'});message('Discordへテスト通知を送りました');});
 $('removeNotification').onclick=()=>perform(async()=>{await api({action:'settings',webhook:''});message('Discord通知先を解除しました');});
 $('showKey').onclick=()=>{$('keyDisplay').hidden=false;$('keyDisplay').value=key;};
