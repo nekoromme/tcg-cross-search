@@ -2,11 +2,12 @@ import { STORE_MAP, STORES, buildStoreSearchUrl } from './stores.js';
 import { findCandidateProducts, parseProductDetail, sanitizeQuery } from './search.js';
 import { isJunkTitle, looksLikeSingleCard, normalizeUrlKey } from './search-common.js';
 import { searchPageEvidence } from './search-evidence.js';
+import { sealedCategoryUrls, validateContinuation } from './store-exceptions.js';
 import { productKind } from '../public/product-kind.js';
 import { matchesQuery, searchTerms, identifyProduct, comparePrice } from '../public/catalog.js';
 import { findNextSearchPage } from './pagination.js';
 
-const APP_VERSION = '0.6.2';
+const APP_VERSION = '0.7.0';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -14,7 +15,7 @@ const SEARCH_HTML_MAX_BYTES = 1_500_000;
 const DETAIL_HTML_MAX_BYTES = 900_000;
 
 const HTTP_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.6.2; +https://github.com/nekoromme/tcg-cross-search)',
+  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.7.0; +https://github.com/nekoromme/tcg-cross-search)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ja,en-US;q=0.8,en;q=0.6',
 };
@@ -57,8 +58,14 @@ async function handleStoreSearch(request) {
   if (query.length > MAX_QUERY_LENGTH) return jsonResponse({ error: '検索語は100文字以内にして。' }, 400);
 
   const terms = searchTerms(query);
+  let resumeUrl;
+  const detailOffset = Number(url.searchParams.get('offset') || 0);
+  try {
+    resumeUrl = validateContinuation(url.searchParams.get('start'), store, terms);
+    if (!Number.isInteger(detailOffset) || detailOffset < 0 || detailOffset > 1000) throw new Error('追加確認の位置が不正です');
+  } catch (error) { return jsonResponse({ error: error.message }, 400); }
   const manualSearchUrl = buildStoreSearchUrl(store, terms[0]);
-  const pageLimit = url.searchParams.get('depth') === 'wide' ? 3 : 1;
+  const pageLimit = resumeUrl ? 1 : url.searchParams.get('depth') === 'wide' ? 3 : 1;
   // 検索＋詳細を合わせて25秒・最大12通信で打ち切る。負荷を無制限に増やさない。
   const budget = { deadline: Date.now() + 25_000, requests: 0 };
   const baseResult = {
@@ -79,15 +86,18 @@ async function handleStoreSearch(request) {
     elapsedMs: 0,
     coverage: { pagesRead: 0, searchRequests: 0, detailChecks: 0, candidateCount: 0, partialReasons: [], nextPageUrl: null,
       listing: { productLinks: 0, matchingLinks: 0, excludedSingles: 0, excludedOther: 0 }, fallback: null,
-      searchPages: [], detailFailures: [] },
+      searchPages: [], detailFailures: [], notes: [], categories: [], pending: [] },
+    continuations: [],
+    rejectedUrls: [],
   };
 
   try {
     const candidatesByUrl = new Map();
-    let searchUrl = manualSearchUrl;
+    let searchUrl = resumeUrl || manualSearchUrl;
     let searchResponse;
     let continuationFailed = false;
     const visited = new Set();
+    const nextPages = new Set();
     // 通常は先頭ページだけ。「広く探す」の時も、店が示した続きだけを最大3ページ読む。
     while (searchUrl && baseResult.coverage.pagesRead < pageLimit) {
       if (visited.has(searchUrl)) break;
@@ -119,6 +129,8 @@ async function handleStoreSearch(request) {
       }
       const next = findNextSearchPage(searchResponse.text, searchResponse.finalUrl || searchUrl, store);
       baseResult.coverage.nextPageUrl = next;
+      nextPages.delete(searchUrl);
+      if (next) nextPages.add(next);
       if (candidatesByUrl.size >= 8 || !next) break;
       if (Date.now() + 10_000 >= budget.deadline) { baseResult.coverage.partialReasons.push('検索時間の上限'); break; }
       searchUrl = next;
@@ -127,7 +139,7 @@ async function handleStoreSearch(request) {
     // 複数語検索を実ページで確認した店だけ。元の検索語を保ち、回数は増やさない。
     const boxFallback = sealedOnly && store.boxKeywordFallback && baseResult.coverage.listing.excludedSingles > 0 && !/BOX|ボックス|カートン/i.test(terms[0]);
     const alternateTerm = boxFallback ? `${terms[0]} ${store.boxKeyword || 'BOX'}` : terms[1];
-    if (!candidatesByUrl.size && !continuationFailed && alternateTerm && searchResponse?.status === 200 && Date.now() + 10_000 < budget.deadline) {
+    if (!resumeUrl && !candidatesByUrl.size && !continuationFailed && alternateTerm && searchResponse?.status === 200 && Date.now() + 10_000 < budget.deadline) {
       const alternate = buildStoreSearchUrl(store, alternateTerm);
       baseResult.coverage.fallback = boxFallback ? 'box_keyword' : 'alias';
       let extra;
@@ -141,8 +153,37 @@ async function handleStoreSearch(request) {
         recordSearchPage(baseResult.coverage, extra, stats, rows);
         for (const c of rows) candidatesByUrl.set(normalizeUrlKey(c.url), c);
         baseResult.coverage.nextPageUrl ||= findNextSearchPage(extra.text, extra.finalUrl || alternate, store);
+        const extraNext = findNextSearchPage(extra.text, extra.finalUrl || alternate, store);
+        if (extraNext) nextPages.add(extraNext);
         if (extra.truncated) baseResult.coverage.partialReasons.push('ページの容量上限');
       } else if (extra) baseResult.coverage.partialReasons.push(`別表記の検索 HTTP ${extra.status}`);
+    }
+    // 通常検索が空のDay屋は、フォームから発見した新品一覧を追加で読む。
+    // 一覧本文に商品があり末尾まで読めた時だけ、その範囲の確認を完了とする。
+    if (!resumeUrl && sealedOnly && !candidatesByUrl.size && !continuationFailed && searchResponse?.status === 200) {
+      const categories = sealedCategoryUrls(searchResponse.text, store);
+      if (categories.length === 2) {
+        for (const category of categories) {
+          try {
+            const extra = await fetchHtml(category.url, SEARCH_HTML_MAX_BYTES, budget);
+            baseResult.coverage.searchRequests++;
+            if (extra.status !== 200) throw new Error(`HTTP ${extra.status}`);
+            baseResult.coverage.pagesRead++;
+            const main = extra.text.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] || '';
+            const stats = {};
+            const rows = findCandidateProducts(main, category.url, query, sealedOnly, 100, true, stats);
+            for (const row of rows) candidatesByUrl.set(normalizeUrlKey(row.url), row);
+            const next = findNextSearchPage(extra.text, category.url, store);
+            const complete = !extra.truncated && !next && stats.productLinks > 0;
+            baseResult.coverage.categories.push({ label: category.label, complete, products: stats.productLinks || 0 });
+            if (!complete) baseResult.coverage.partialReasons.push(`${category.label}一覧は一部未確認`);
+          } catch (error) {
+            baseResult.coverage.categories.push({ label: category.label, complete: false });
+            baseResult.coverage.partialReasons.push(`${category.label}一覧: ${safeErrorMessage(error)}`);
+          }
+        }
+        if (baseResult.coverage.categories.every(c => c.complete)) baseResult.coverage.notes.push('新品・新品その他の公開一覧を確認');
+      }
     }
     baseResult.httpStatus = searchResponse.status;
 
@@ -156,11 +197,12 @@ async function handleStoreSearch(request) {
       const candidates = [...candidatesByUrl.values()];
       // BOXを先に確保してから詳細確認。カートンが候補枠を独占しない。
       candidates.sort((a, b) => Number(b.kind === 'box') - Number(a.kind === 'box') || b.score - a.score);
-      const selected = candidates.slice(0, 8);
+      const selected = candidates.slice(detailOffset, detailOffset + 8);
       baseResult.candidateLimit = 8;
       baseResult.coverage.candidateCount = candidates.length;
-      if (baseResult.coverage.nextPageUrl) baseResult.coverage.partialReasons.push('検索結果の続きは未確認');
-      if (candidates.length > 8) baseResult.coverage.partialReasons.push('候補件数の上限');
+      if (!detailOffset) for (const next of nextPages) if (!visited.has(next)) baseResult.continuations.push({ start: next, offset: 0 });
+      if (candidates.length > detailOffset + 4) baseResult.continuations.unshift({ start: resumeUrl || '', offset: detailOffset + 4 });
+      if (baseResult.continuations.length) baseResult.coverage.pending.push('残りのページ・商品詳細を追加確認できます');
 
       if (!candidates.length) {
         baseResult.status = 'no_hit';
@@ -180,7 +222,10 @@ async function handleStoreSearch(request) {
               const refined = parseProductDetail(detailResponse.text);
               // 詳細で別の商品・シングル・用品だと分かった候補は捨てる。
               if (refined.title && (!matchesQuery(refined.title, query)
-                || (sealedOnly && (isJunkTitle(refined.title) || looksLikeSingleCard(refined.title))))) return null;
+                || (sealedOnly && (isJunkTitle(refined.title) || looksLikeSingleCard(refined.title))))) {
+                baseResult.rejectedUrls.push(candidate.url);
+                return null;
+              }
               const row = {
                 ...candidate,
                 ...refined,
@@ -196,7 +241,8 @@ async function handleStoreSearch(request) {
               // 発売前の商品を、即納できる在庫として表示しない。
               if (row.stock === 'in_stock' && product?.releaseDate && product.releaseDate > new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })) row.stock = 'preorder';
               row.comparison = comparePrice(row);
-              if (!row.detailChecked || row.price == null || row.stock === 'unknown') {
+              if (row.priceState === 'unavailable') baseResult.coverage.notes.push('0円・在庫なしの商品は購入不可として確認済み');
+              if (!row.detailChecked || (row.price == null && row.priceState !== 'unavailable') || row.stock === 'unknown') {
                 const reason = [!row.detailChecked && '商品名を判定できず', row.price == null && (row.priceIssue || '価格を判定できず'), row.stock === 'unknown' && '在庫表示を判定できず'].filter(Boolean).join('・');
                 baseResult.coverage.detailFailures.push({ url: candidate.url, reason });
               }
@@ -209,7 +255,7 @@ async function handleStoreSearch(request) {
           }),
         );
         baseResult.results = baseResult.results.filter(Boolean);
-        if (baseResult.results.some(row => !row.detailChecked)) baseResult.coverage.partialReasons.push('商品詳細の未確認あり');
+        if (baseResult.results.some(row => !row.detailChecked) && !baseResult.continuations.length) baseResult.coverage.partialReasons.push('商品詳細の未確認あり');
         if (baseResult.coverage.detailFailures.length) baseResult.coverage.partialReasons.push(...baseResult.coverage.detailFailures.map(f => f.reason));
         if (!baseResult.results.length) baseResult.status = 'no_hit';
       }
@@ -223,7 +269,8 @@ async function handleStoreSearch(request) {
   // すべての取得ページで根拠があった場合だけ「該当なし」を確定する。
   // 続きのページや通信エラーがある場合の未確認フラグは別に保持する。
   baseResult.coverage.noHitConfirmed = baseResult.status === 'no_hit' && baseResult.coverage.searchPages.length > 0
-    && baseResult.coverage.searchPages.every(p => p.outcome !== 'unreadable');
+    && (baseResult.coverage.searchPages.every(p => p.outcome !== 'unreadable')
+      || (baseResult.coverage.categories.length === 2 && baseResult.coverage.categories.every(c => c.complete)));
   baseResult.coverage.requests = budget.requests;
   baseResult.coverage.partialReasons = [...new Set(baseResult.coverage.partialReasons)];
   // 検索語や認証情報はログへ出さず、故障の切り分けに必要な店・件数・時間を残す。
@@ -231,6 +278,7 @@ async function handleStoreSearch(request) {
     pages: baseResult.coverage.pagesRead, details: baseResult.coverage.detailChecks, requests: budget.requests,
     listing: baseResult.coverage.listing, fallback: baseResult.coverage.fallback,
     searchPages: baseResult.coverage.searchPages, partialReasons: baseResult.coverage.partialReasons,
+    categories: baseResult.coverage.categories, remainingTasks: baseResult.continuations.length,
     detailFailureReasons: baseResult.coverage.detailFailures.map(f => f.reason), elapsedMs: baseResult.elapsedMs }));
   const response = jsonResponse(baseResult);
   response.headers.set('Cache-Control', forceRefresh ? 'no-store' : `public, max-age=${CACHE_SECONDS}`);

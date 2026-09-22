@@ -1,11 +1,13 @@
-import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.6.2';
+import { renderHistory, renderRows, renderStatuses, saveHistory, summarizeStoreChecks } from './ui.js?v=0.7.0';
 import { PRODUCTS, GAMES, CATALOG_UPDATED, identifyProduct } from './catalog.js';
 import { createFavoritesStore, FAVORITES_KEY } from './saved-searches.js';
+import { collectStoreResults } from './continued-search.js';
 
 const els = {
   form: document.querySelector('#searchForm'),
   query: document.querySelector('#query'),
   searchButton: document.querySelector('#searchButton'),
+  continueButton: document.querySelector('#continueSearch'),
   searchSettings: document.querySelector('#searchSettings'),
   unitFilter: document.querySelector('#unitFilter'),
   sortOrder: document.querySelector('#sortOrder'),
@@ -41,6 +43,7 @@ let searching = false;
 let currentRun = 0;
 let hasSearched = false;
 let activeStores = [];
+const lastParams = new Map();
 const favorites = createFavoritesStore();
 let deletedFavorite = null;
 
@@ -82,6 +85,7 @@ els.form.addEventListener('submit', (event) => {
   event.preventDefault();
   startSearch();
 });
+els.continueButton.addEventListener('click', resumeRemaining);
 // 並び替え・表示の変更は取得済みの結果だけで行い、店へ再アクセスしない。
 for (const control of [els.resultView, els.unitFilter, els.sortOrder, els.inStockOnly, els.priceLimit, els.maxPrice, els.includeUnknown, els.includePreorders, els.gameFilter]) {
   control.addEventListener(control === els.maxPrice ? 'input' : 'change', () => {
@@ -120,6 +124,8 @@ async function startSearch() {
   saveHistory(query);
   refreshHistory();
   storeResults = new Map();
+  lastParams.clear();
+  els.continueButton.hidden = true;
   searching = true;
   refreshFavorites();
   hasSearched = true;
@@ -139,23 +145,18 @@ async function startSearch() {
   const workers = Array.from({ length: Math.min(6, queue.length) }, async () => {
     while (queue.length && runId === currentRun) {
       const store = queue.shift();
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 35_000);
       try {
         const params = new URLSearchParams({
           store: store.id,
           q: query,
           sealed: '1',
-          v: '0.6.1',
+          v: '0.7.0',
           depth: els.searchDepth.value,
           refresh: forceRefresh ? '1' : '0',
         });
         if (cacheBust) params.set('_bust', cacheBust);
-        const response = await fetch(`/api/search?${params}`, {
-          cache: forceRefresh ? 'no-store' : 'default', signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`検索サービスから HTTP ${response.status} が返りました`);
-        const data = await response.json();
+        lastParams.set(store.id, params);
+        const data = await runStoreBatches(store, params);
         storeResults.set(store.id, data);
       } catch (error) {
         storeResults.set(store.id, {
@@ -167,7 +168,6 @@ async function startSearch() {
           manualSearchUrl: store.home,
         });
       } finally {
-        clearTimeout(timeout);
         completed += 1;
         updateProgress(completed);
         updateResults();
@@ -188,6 +188,62 @@ async function startSearch() {
   updateProgress(completed, true);
   updateResults();
   renderStatuses(els.statuses, activeStores, storeResults, searching);
+  updateContinueButton();
+}
+
+async function runStoreBatches(store, params, previous = null) {
+  return collectStoreResults(async task => {
+    const next = new URLSearchParams(params);
+    if (task.start) next.set('start', task.start);
+    next.set('offset', String(task.offset || 0));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 35_000);
+    try {
+      const response = await fetch(`/api/search?${next}`, { cache: next.get('refresh') === '1' ? 'no-store' : 'default', signal: controller.signal });
+      if (!response.ok) throw new Error(`検索サービスから HTTP ${response.status} が返りました`);
+      return await response.json();
+    } finally { clearTimeout(timeout); }
+  }, previous, partial => {
+    storeResults.set(store.id, partial);
+    updateResults();
+    renderStatuses(els.statuses, activeStores, storeResults, searching);
+  }, params.get('depth') === 'wide' ? 20 : 6);
+}
+
+function updateContinueButton() {
+  const count = [...storeResults.values()].filter(r=>r.continuations?.length).length;
+  els.continueButton.hidden = !count;
+  els.continueButton.disabled = searching;
+  els.continueButton.textContent = `残りを追加確認（${count}店）`;
+}
+
+async function resumeRemaining() {
+  if (searching) return;
+  searching = true;
+  els.searchButton.disabled = true;
+  els.gameFilter.disabled = true;
+  els.searchDepth.disabled = true;
+  updateContinueButton();
+  const queue = activeStores.filter(s=>storeResults.get(s.id)?.continuations?.length && lastParams.has(s.id));
+  // 同じ店舗への同時アクセスを増やさず、初回と同じ検索条件の続きを確認する。
+  await Promise.all(Array.from({length:Math.min(6,queue.length)},async()=>{
+    while(queue.length) {
+      const store=queue.shift();
+      try {
+        const params=new URLSearchParams(lastParams.get(store.id));
+        params.set('refresh','1'); params.set('_bust',String(Date.now()));
+        storeResults.set(store.id,await runStoreBatches(store,params,storeResults.get(store.id)));
+      } catch(error) { storeResults.get(store.id).resumeError=error.message; }
+    }
+  }));
+  searching = false;
+  els.searchButton.disabled = false;
+  els.gameFilter.disabled = false;
+  els.searchDepth.disabled = false;
+  updateContinueButton();
+  updateProgress(activeStores.length,true);
+  updateResults();
+  renderStatuses(els.statuses,activeStores,storeResults,false);
 }
 
 function updateProgress(completed, done = false) {
