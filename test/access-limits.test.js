@@ -93,3 +93,17 @@ test('監視が通信上限で延期された時は在庫・通知状態を変�
   await runMonitorTick(s,{now:()=>now,save:async()=>{},storeHost:()=> 'mediaworld.co.jp',check:async()=>({deferred:true,error:'アクセス上限',retryAt:now+60000})});
   assert.equal(target.lastGood.stock,'in_stock');assert.deepEqual(target.episodes,before);assert.equal(target.nextAt,now+60000);assert.equal(target.failures,0);assert.equal(s.events.length,0);
 });
+
+test('本番と同じ共有保存先の呼出し経路で検索が動き、使用数が永続化される',async t=>{
+  const {InventoryMonitor}=await import('../src/monitor-service.js');
+  const data=new Map();
+  const object=new InventoryMonitor({storage:{get:async k=>structuredClone(data.get(k)),put:async(k,v)=>data.set(k,structuredClone(v))}},{});
+  const env={MONITORS:{idFromName:name=>name,get:id=>{assert.equal(id,'shared-access-budget-v1');return object;}}};
+  t.mock.method(globalThis,'fetch',async()=>new Response('<html><main>検索結果 0件</main></html>',{headers:{'Content-Type':'text/html'}}));
+  const result=await (await worker.fetch(new Request('https://x/api/search?store=mediaworld&q=GD04'),env)).json();
+  assert(!result.accessLimited);assert.notEqual(result.status,'error');
+  const saved=data.get('access-budget');assert(saved.total>=1);assert.equal(saved.leases.length,0);
+  const next=new InventoryMonitor({storage:{get:async k=>structuredClone(data.get(k)),put:async(k,v)=>data.set(k,structuredClone(v))}},{});
+  const status=await(await next.fetch(new Request('https://internal/internal/access-budget',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'status'})}))).json();
+  assert.equal(status.used,saved.total);
+});
