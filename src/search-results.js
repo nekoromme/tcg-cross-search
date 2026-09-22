@@ -59,8 +59,11 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
 
     const sealedTitle = isSealedTitle(title);
     const junkTitle = isJunkTitle(title);
-    const singleCard = looksLikeSingleCard(title);
-    const matches = matchesQuery(title);
+    // トレコロ等はカード番号がリンク先にだけ入る。番号はシングルの除外と
+    // 診断にだけ使い、商品名が不明なBOXをURLだけで採用することはしない。
+    const path = new URL(url).pathname;
+    const singleCard = looksLikeSingleCard(title) || (!sealedTitle && looksLikeSingleCard(path));
+    const matches = matchesQuery(title) || (singleCard && matchesQuery(path));
     const excluded = sealedOnly && (junkTitle || singleCard || (!sealedTitle && !/新品|未開封|ブースター|パック/i.test(title)));
     const evidenceKey = normalizeUrlKey(url);
     if (title && !counted.has(evidenceKey)) {

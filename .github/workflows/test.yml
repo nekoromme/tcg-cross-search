@@ -25,5 +25,3 @@ jobs:
         run: npm test
       - name: Validate Cloudflare build
         run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
-      - name: Diagnose public store pages
-        run: node scripts/diagnose-stores.mjs

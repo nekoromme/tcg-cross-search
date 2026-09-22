@@ -36,7 +36,7 @@ export function isBoxOrCartonTitle(title) {
 }
 
 export function isJunkTitle(title) {
-  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ|プラモデル|デカール|中古|スリーブ|デッキシールド|プレイマット|デッキケース|デッキボックス|ストレージ|空箱|空き箱|店頭受取専用|店頭販売のみ/i.test(String(title || ''));
+  return /オリパ|謎袋|謎箱|福袋|くじ|ガチャ|プラモデル|デカール|フィギュア|figma|LittleArmory|中古|スリーブ|デッキシールド|プレイマット|デッキケース|デッキボックス|ストレージ|空箱|空き箱|店頭受取専用|店頭販売のみ/i.test(String(title || ''));
 }
 
 export function looksLikeSingleCard(title) {

@@ -6,6 +6,7 @@ import { parseProductDetail } from '../src/product-detail.js';
 import { emptySearchEvidence } from '../src/search-evidence.js';
 import { summarizeStoreChecks } from '../public/ui.js';
 import { STORE_MAP, buildStoreSearchUrl } from '../src/stores.js';
+import { findNextSearchPage } from '../src/pagination.js';
 
 // 実際のCARDMAX応答はhrefの引用符がない。ブラウザーのDOMは引用符を補うため、
 // 保存済みDOMだけのテストでは見つけられなかった読み取り漏れを再現する。
@@ -22,6 +23,23 @@ test('raw CARDMAX anchors and camel-case product heading yield the real BOX offe
   assert.equal(parsed.price, 5808);
   assert.equal(parsed.stock, 'out_of_stock');
   assert.match(parsed.title, /Phantom Aria BOX/);
+});
+
+test('Yahoo paragraph product title exposes own stock without borrowing another store stock', () => {
+  const html = '<div class="styles_itemName__Cf_Kt"><p class="styles_catchCopy__yhwu9">BOX カートン</p>' +
+    '<p class="styles_name__u228e">BRIGHTNESS OF HOPE FB11 BOX</p></div>' +
+    '<ul class="styles_itemLabels__CoCPa"><li>在庫なし</li></ul><p>販売価格: 13,500円</p>' +
+    '<h2 class="ModulesHeader__heading">他ストアでの取り扱い</h2><p>在庫あり 100円</p>';
+  const row=parseProductDetail(html);
+  assert.equal(row.title,'BRIGHTNESS OF HOPE FB11 BOX');
+  assert.equal(row.price,13500);
+  assert.equal(row.stock,'out_of_stock');
+  assert.equal(parseProductDetail(html.replace('在庫なし','在庫表示未提供')).stock,'unknown');
+});
+
+test('OP17 figure accessories do not become uncertain trading-card candidates', () => {
+  const html='<a href="/products/51069274000">【新品即納】[FIG] LA-OP17:figma用タクティカルグローブLサイズ フィギュア用アクセサリ</a>';
+  assert.deepEqual(findCandidateProducts(html,'https://mediaworld.co.jp/','OP-17',true,8),[]);
 });
 
 test('unquoted next-product anchors cannot lend their price to the previous listing', () => {
@@ -45,6 +63,16 @@ test('Torecolo includes the search execution flag shown in the actual form', () 
   const url = new URL(buildStoreSearchUrl(STORE_MAP.get('torecolo'), 'GD04'));
   assert.equal(url.searchParams.get('search'), 'x');
   assert.equal(url.searchParams.get('keyword'), 'GD04');
+  const next = findNextSearchPage('<a href="/shop/goods/search.aspx?p=2&search=x&keyword=GD04&ps=50">2</a>',url,STORE_MAP.get('torecolo'));
+  assert.equal(new URL(next).searchParams.get('p'),'2');
+});
+
+test('single-card identifiers in Torecolo URLs explain exclusions but never establish a BOX offer', () => {
+  const stats = {};
+  const rows = findCandidateProducts('<a href="/shop/g/gGCG-GD04-002LR/">ペーネロペー</a>',
+    'https://www.torecolo.jp/shop/goods/search.aspx', 'GD04',true,8,true,stats);
+  assert.equal(rows.length,0);
+  assert.equal(stats.excludedSingles,1);
 });
 
 test('only explicit search-empty evidence is accepted; carts and templates are ignored', () => {

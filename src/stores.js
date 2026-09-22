@@ -51,7 +51,8 @@ export const STORES = [
   {
     id: 'torecolo',
     // keywordだけでは検索フォームが表示され、検索自体が実行されない。
-    fixed: { search: 'x' },
+    fixed: { search: 'x', ps: '50' },
+    pageFields: ['p'],
     name: 'CBトレコロ',
     home: 'https://www.torecolo.jp/shop/',
     action: 'https://www.torecolo.jp/shop/goods/search.aspx',

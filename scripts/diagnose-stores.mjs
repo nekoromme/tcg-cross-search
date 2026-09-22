@@ -1,4 +1,4 @@
-// 手動の切り分け用。公開ページだけを最大6回取得し、商品リンクと件数を確認する。
+// 手動の切り分け用。公開ページだけを最大8回取得し、商品リンクと件数を確認する。
 // Cookieや認証情報は送信せず、応答ヘッダー全体やページ全文もログに出さない。
 import { findCandidateProducts } from '../src/search-results.js';
 import { emptySearchEvidence } from '../src/search-evidence.js';

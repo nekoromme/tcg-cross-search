@@ -63,6 +63,8 @@ export function parseProductDetail(html) {
   }
   if (out.price == null) out.price = extractPrice(mainText);
   const priceText = mainText.normalize('NFKC');
+  if (out.price == null && /(?:販売価格|税込価格)\s*[:：]?\s*[¥￥]?\s*0\s*(?:円|[（(]税込)/.test(priceText))
+    out.priceIssue = '店舗の表示価格が0円のため販売価格を確認できず';
   // 税抜だけのページを税込の定価と比較しない。税込併記は明示された金額を採用。
   if (/税抜|税別/.test(priceText)) {
     const inclusive = priceText.match(/(?:税込(?:価格)?\s*[:：]?\s*[¥￥]?\s*([\d,]+)\s*円)|(?:([\d,]+)\s*円\s*\(?税込\)?)/);
@@ -102,7 +104,7 @@ function extractMainProductRegion(html, productHeading) {
   // 商品の位置を特定できないページ全体から価格を拾わない。
   if (!productHeading) return '';
   const region = source.slice(productHeading.index, productHeading.index + 45000);
-  const boundary = region.search(/<(?:div|section|aside|ul)\b[^>]*(?:id|class)=["'][^"']*(?:related|recommend|recently|checked-contents)[^"']*["']|<h[2-6]\b[^>]*>\s*(?:おすすめ|関連商品|最近チェック)|<!--\s*(?:関連商品|おすすめ|最近チェック)/i);
+  const boundary = region.search(/<(?:div|section|aside|ul)\b[^>]*(?:id|class)=["'][^"']*(?:related|recommend|recently|checked-contents)[^"']*["']|<h[2-6]\b[^>]*>\s*(?:おすすめ|関連商品|最近チェック|他ストアでの取り扱い|商品Q&amp;A|ストア情報)|<!--\s*(?:関連商品|おすすめ|最近チェック)/i);
   return (boundary < 0 ? region : region.slice(0, boundary)).replace(/<!--[\s\S]*?-->/g, ' ');
 }
 
@@ -115,6 +117,10 @@ function getMetaContent(html, property) {
 }
 
 function findProductHeading(html) {
+  // Yahoo!ショッピングの新画面は商品名がh1ではなくpにある。
+  // キャッチコピー（BOX/カートン等）を混ぜず、商品名だけを開始位置にする。
+  const yahooName = html.match(/<div\b[^>]*class=["'][^"']*\bstyles_itemName__[^"']*["'][^>]*>[\s\S]{0,1500}?<p\b[^>]*class=["'][^"']*\bstyles_name__[^"']*["'][^>]*>([\s\S]*?)<\/p>/i);
+  if (yahooName) return Object.assign([yahooName[0], '', yahooName[1]], { index: yahooName.index });
   // 二木のMakeShop画面は見出しタグを使わず div.item-title に商品名を置いている。
   // 内側の売切バッジやカテゴリ名を除き、購入対象の商品名だけを取り出す。
   const makeshop = html.match(/<div\b[^>]*class=["']item-title["'][^>]*>([\s\S]*?)<\/div>\s*(?=<(?!\/div))/i);

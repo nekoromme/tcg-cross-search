@@ -6,7 +6,7 @@ export function emptySearchEvidence(html) {
   const visible = String(html || '').replace(/<(script|style|select)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ');
   const text = cleanText(visible);
-  const message = text.match(/お探しの商品は見つかりませんでした|ご指定の条件に一致する商品が見つかりませんでした|該当する商品(?:は|が)(?:ありません|ございません)|検索条件に一致する商品(?:は|が)(?:ありません|ございません)/);
+  const message = text.match(/お探しの商品は見つかりませんでした|(?:ご指定の条件|検索条件)に一致する商品が見つかりませんでした|該当する商品(?:は|が)(?:ありません|ございません)|検索条件に一致する商品(?:は|が)(?:ありません|ございません)/);
   if (message) return message[0];
   // おちゃのこネットの実ページで確認した検索結果件数。単なる0という数字は使わない。
   if (/class=["'][^"']*\b(?:count_number|item_count|number_box)\b[^"']*["'][^>]*>\s*(?:<[^>]+>\s*)*0\s*(?:<[^>]+>\s*)*件/i.test(visible)

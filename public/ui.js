@@ -96,7 +96,7 @@ function renderProductGroup(group) {
 function renderCard(row, compact = false) {
   const reasons = [];
   if (!row.detailChecked) reasons.push(row.reviewReason || '商品詳細は未確認');
-  if (row.price == null) reasons.push('価格不明');
+  if (row.price == null) reasons.push(row.priceIssue || '価格不明');
   if (row.stock === 'unknown') reasons.push('在庫不明');
   if (row.kind === 'unknown') reasons.push('販売単位不明');
   const time = row.searchedAt && !Number.isNaN(Date.parse(row.searchedAt))
@@ -158,7 +158,7 @@ export function summarizeStoreChecks(results) {
   let noHit = 0, partial = 0, failed = 0;
   for (const r of results) {
     if (r.status === 'blocked' || r.status === 'error') { failed++; continue; }
-    if (r.status === 'no_hit' && r.coverage?.noHitConfirmed) noHit++;
+    if (r.status === 'no_hit' && r.coverage?.noHitConfirmed && !r.coverage?.partialReasons?.length) noHit++;
     if (r.coverage?.partialReasons?.length || (r.status === 'no_hit' && !r.coverage?.noHitConfirmed)) partial++;
   }
   return { noHit, partial, failed };

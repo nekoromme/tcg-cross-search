@@ -197,7 +197,7 @@ async function handleStoreSearch(request) {
               if (row.stock === 'in_stock' && product?.releaseDate && product.releaseDate > new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })) row.stock = 'preorder';
               row.comparison = comparePrice(row);
               if (!row.detailChecked || row.price == null || row.stock === 'unknown') {
-                const reason = [!row.detailChecked && '商品名を判定できず', row.price == null && '価格を判定できず', row.stock === 'unknown' && '在庫表示を判定できず'].filter(Boolean).join('・');
+                const reason = [!row.detailChecked && '商品名を判定できず', row.price == null && (row.priceIssue || '価格を判定できず'), row.stock === 'unknown' && '在庫表示を判定できず'].filter(Boolean).join('・');
                 baseResult.coverage.detailFailures.push({ url: candidate.url, reason });
               }
               return row;
