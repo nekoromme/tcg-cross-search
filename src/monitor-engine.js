@@ -1,5 +1,6 @@
+import { recordHistory } from './monitor-history.js';
 // スケジュールと保存先を外から渡す。移行しても在庫判定・通知履歴を変えない。
-import { LIMITS, effectiveInterval, discoveryInterval, activeTarget, addTarget, matchesRule, observe, recordFailure, validateWebhook } from './monitor-core.js';
+import { LIMITS, effectiveInterval, discoveryInterval, activeJob, activeTarget, addTarget, matchesRule, observe, recordFailure, validateWebhook } from './monitor-core.js';
 
 export async function runMonitorTick(state, io) {
   const now=io.now?.() ?? Date.now();
@@ -7,7 +8,7 @@ export async function runMonitorTick(state, io) {
   if (!state.enabled) return;
   const usedHosts=new Set();
   // 発見検索の枠を先に確保する。30秒監視の店舗でも発見検索が永久に後回しにならない。
-  const job=state.jobs.filter(j=>j.nextAt<=now && state.rules.some(r=>r.id===j.ruleId&&r.enabled))
+  const job=state.jobs.filter(j=>j.nextAt<=now && activeJob(state,j))
     .sort((a,b)=>a.nextAt-b.nextAt).find(j=>(state.hosts[io.storeHost(j.storeId)]||0)<=now);
   if(job)usedHosts.add(io.storeHost(job.storeId));
   // 同じ店は1巡で1商品、直近の接続から最低30秒。遅い店が他を止めないよう6店まで並列。
@@ -25,11 +26,12 @@ export async function runMonitorTick(state, io) {
   await Promise.all(selected.map(async t=>{
     try {
       const response=await io.check(t);
-      if(response.deferred) {t.nextAt=response.retryAt;t.error=response.error;return;}
-      if (response.error) recordFailure(t,response.error,now,state.intervalSeconds,response.status);
-      else observe(state,t,response.row,now);
+      const checkedAt=io.now?.()??Date.now();
+      if(response.deferred) {t.nextAt=response.retryAt;t.error=response.error;recordHistory(t,{kind:'waiting',reason:response.error},checkedAt);return;}
+      if (response.error) recordFailure(t,response.error,checkedAt,state.intervalSeconds,response.status);
+      else observe(state,t,response.row,checkedAt);
       if ([403,429].includes(response.status)) state.hosts[new URL(t.url).hostname]=now+1800_000;
-    } catch { recordFailure(t,'商品ページの通信に失敗',now,state.intervalSeconds); }
+    } catch { recordFailure(t,'商品ページの通信に失敗',io.now?.()??Date.now(),state.intervalSeconds); }
   }));
   await io.save(state);
 
@@ -41,7 +43,7 @@ export async function runMonitorTick(state, io) {
     const task=job.queue.shift() || {start:'',offset:0};
     await io.save(state);
     try {
-      const result=await io.discover(rule.config,job.storeId,task);
+      const result=await io.discover(rule.config,job.storeId,task,{pausedUrls:state.targets.filter(t=>t.enabled===false&&t.storeId===job.storeId).map(t=>t.url)});
       if(result.accessLimited)throw Object.assign(new Error(result.error),{accessLimited:true,retryAt:result.retryAt});
       if (['error','blocked'].includes(result.status)) throw Object.assign(new Error('検索ページを取得できず'),{status:result.httpStatus});
       for (const row of result.results||[]) if (matchesRule(row,rule.config)) {

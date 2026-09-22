@@ -1,3 +1,4 @@
+import { recordHistory, pruneHistory, HISTORY_LIMITS } from './monitor-history.js';
 // 実行場所に依存しない監視のルール。Cloudflareでも移行先のNode.jsでも共有する。
 import { STORE_MAP, STORES } from './stores.js';
 import { isLikelyProductUrl, isJunkTitle, looksLikeSingleCard, normalizeUrlKey, sanitizeQuery } from './search-common.js';
@@ -6,7 +7,7 @@ import { productKind } from '../public/product-kind.js';
 
 export const LIMITS = { rules: 10, targets: 50, events: 80, intervalSeconds: 60, discoveryMs: 30 * 60_000 };
 export function emptyMonitor() {
-  return { schema: 1, enabled: true, intervalSeconds: 60, webhook: '', rules: [], targets: [], jobs: [], events: [], hosts: {}, lastTick: null, error: '' };
+  return { schema: 1, enabled: true, intervalSeconds: 60, webhook: '', rules: [], targets: [], jobs: [], events: [], disabledStoreIds: [], hosts: {}, lastTick: null, error: '' };
 }
 export function validateRule(input) {
   const query = sanitizeQuery(input.query);
@@ -101,7 +102,30 @@ export function activeTarget(state, target) {
   // 旧版で51件以上登録済みでもデータを削除しない。超過分を待機させる。
   return state.enabled && enabledTargets(state).slice(0,LIMITS.targets).includes(target);
 }
-function enabledTargets(state) {return state.targets.filter(t=>state.rules.some(r=>r.enabled && t.ruleIds.includes(r.id)));}
+export function storeEnabled(state,storeId) {return !(state.disabledStoreIds||[]).includes(storeId);}
+export function activeJob(state,job) {return state.enabled && storeEnabled(state,job.storeId) && state.rules.some(r=>r.id===job.ruleId&&r.enabled);}
+function enabledTargets(state) {return state.targets.filter(t=>t.enabled!==false && storeEnabled(state,t.storeId) && state.rules.some(r=>r.enabled && t.ruleIds.includes(r.id)));}
+export function targetStatus(state,target) {
+  if(!state.enabled)return '全体を停止中';
+  if(target.enabled===false)return 'このページをOFF';
+  if(!storeEnabled(state,target.storeId))return '店舗をOFF';
+  if(!state.rules.some(r=>r.enabled&&target.ruleIds.includes(r.id)))return '監視条件を停止中';
+  return activeTarget(state,target)?'監視中':'登録上限のため待機';
+}
+// ON/OFFの変更は既存の価格・通知履歴を消さず、予定と通知待ちだけを調整する。
+export function syncActivity(state,before,now=Date.now()) {
+  for(const target of state.targets) {
+    const active=activeTarget(state,target);
+    if(before.has(target.id) && before.get(target.id)!==active) {
+      recordHistory(target,{kind:active?'resume':'pause',reason:active?'監視を再開（次の取得から確認）':targetStatus(state,target)},now);
+      for(const episode of Object.values(target.episodes))episode.negatives=0;
+      if(active)target.nextAt=Math.max(now,target.error?target.nextAt:0);
+    }
+    if(!active)for(const event of state.events)if(event.targetId===target.id&&event.delivery==='pending')event.delivery='cancelled';
+    // 対象を減らした分を次の予定にも反映。ただし失敗・アクセス制限の待機は短縮しない。
+    if(active&&!target.error)target.nextAt=Math.min(target.nextAt,Math.max(now,(target.lastGoodAt||now)+effectiveInterval(state,target)*1000));
+  }
+}
 export function effectiveInterval(state,target) {
   const targets=enabledTargets(state).slice(0,LIMITS.targets);
   const host=target && new URL(target.url).hostname.replace(/^www\./,'');
@@ -111,15 +135,16 @@ export function effectiveInterval(state,target) {
   return Math.max(state.intervalSeconds,Math.ceil(targets.length*86400/8000),Math.ceil(hostCount*86400/1200));
 }
 export function discoveryInterval(state) {
-  const jobs=state.jobs.filter(j=>state.rules.some(r=>r.id===j.ruleId&&r.enabled)).length;
+  const jobs=state.jobs.filter(j=>storeEnabled(state,j.storeId)&&state.rules.some(r=>r.id===j.ruleId&&r.enabled)).length;
   // 1回4通信を目安に掲載検索を分散。続きの実通信数は共有上限でも制限する。
   return Math.max(LIMITS.discoveryMs,Math.ceil(jobs*4*86400000/4000));
 }
 export function observe(state, target, row, now) {
   target.lastChecked=now;
   target.latest=row;
-  const known = row.detailChecked && row.title && row.stock !== 'unknown' && ((row.price > 0 && row.priceComparable!==false) || row.stock==='out_of_stock');
+  const known = row.detailChecked && row.title && ['in_stock','out_of_stock','preorder'].includes(row.stock) && ((row.price > 0 && row.priceComparable!==false) || row.stock==='out_of_stock');
   if (!known) { recordFailure(target, '商品名・在庫・価格を確認できず', now, state.intervalSeconds); return; }
+  recordHistory(target,{kind:'observation',stock:row.stock,price:row.price,comparable:row.priceComparable},now);
   target.lastGood=row; target.lastGoodAt=now; target.title=row.title.slice(0,600); target.failures=0; target.error='';
   target.nextAt=now+effectiveInterval(state,target)*1000;
   for (const rule of state.rules.filter(r=>r.enabled && target.ruleIds.includes(r.id))) {
@@ -147,11 +172,13 @@ export function observe(state, target, row, now) {
 }
 export function recordFailure(target, message, now, intervalSeconds, status=0) {
   target.lastChecked=now; target.failures=(target.failures||0)+1;
+  recordHistory(target,{kind:'error',reason:message},now);
   target.error=message; // HTTP本文や秘密のURLをエラーへ入れない。
   const delay=[403,429].includes(status)?1800_000:Math.min(1800_000,intervalSeconds*1000*2**Math.min(target.failures,5));
   target.nextAt=now+delay;
 }
 export function publicMonitor(state, minInterval=30) {
   const {webhook,hosts,...rest}=state;
-  return { ...rest, notificationConfigured:Boolean(webhook), limits:LIMITS, minInterval, load: { activePages:enabledTargets(state).slice(0,LIMITS.targets).length, waitingPages:Math.max(0,enabledTargets(state).length-LIMITS.targets), intervalSeconds:Math.max(effectiveInterval(state),...enabledTargets(state).slice(0,LIMITS.targets).map(t=>effectiveInterval(state,t))), discoverySeconds:Math.ceil(discoveryInterval(state)/1000) } };
+  const targets=state.targets.map(t=>({...t,history:pruneHistory({...t}),monitorStatus:targetStatus(state,t),monitorActive:activeTarget(state,t)}));
+  return { ...rest, targets, historyLimits:HISTORY_LIMITS, notificationConfigured:Boolean(webhook), limits:LIMITS, minInterval, load: { activePages:enabledTargets(state).slice(0,LIMITS.targets).length, waitingPages:Math.max(0,enabledTargets(state).length-LIMITS.targets), intervalSeconds:Math.max(effectiveInterval(state),...enabledTargets(state).slice(0,LIMITS.targets).map(t=>effectiveInterval(state,t))), discoverySeconds:Math.ceil(discoveryInterval(state)/1000) } };
 }
