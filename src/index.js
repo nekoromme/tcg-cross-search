@@ -11,7 +11,7 @@ import { networkGuard } from './access-limits.js';
 import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.8.2';
+const APP_VERSION = '0.9.0';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -19,7 +19,7 @@ const SEARCH_HTML_MAX_BYTES = 1_500_000;
 const DETAIL_HTML_MAX_BYTES = 900_000;
 
 const HTTP_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.8.2; +https://github.com/nekoromme/tcg-cross-search)',
+  'User-Agent': 'Mozilla/5.0 (compatible; PersonalTCGCrossSearch/0.9.0; +https://github.com/nekoromme/tcg-cross-search)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ja,en-US;q=0.8,en;q=0.6',
 };
@@ -50,7 +50,7 @@ export default {
   },
 };
 
-export async function handleStoreSearch(request, guard = null) {
+export async function handleStoreSearch(request, guard = null, {skipDetail=()=>false} = {}) {
   const startedAt = Date.now();
   const url = new URL(request.url);
   const storeId = url.searchParams.get('store') || '';
@@ -230,6 +230,8 @@ export async function handleStoreSearch(request, guard = null) {
       } else {
         baseResult.results = await Promise.all(
           selected.map(async (candidate, index) => {
+            // 自動監視でOFFにしたページは、掲載探しの詳細取得からも除外する。
+            if(skipDetail(candidate))return null;
             // 一度に外へ接続しすぎないよう、詳細は最大4件。残りは要確認欄へ。
             if (index >= 4) return { ...candidate, reviewReason: '商品詳細は未確認' };
             try {

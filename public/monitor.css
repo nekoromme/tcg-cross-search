@@ -14,3 +14,13 @@ form .check { display:flex; align-items:center; gap:8px; }
 .monitorError { color:var(--bad,#b54708); }
 #keyDisplay { margin-top:12px; }
 @media(max-width:500px) { .monitorGrid { grid-template-columns:1fr; } }
+
+/* ON/OFFと履歴はスマホで押しやすく、横にはみ出さない形にする。 */
+.storeToggle { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); padding:12px 0; }
+.storeToggle strong,.storeToggle small { display:block; }
+.storeToggle button { flex-shrink:0; min-height:44px; padding:10px 14px; }
+.storeChoices { display:grid; gap:10px; }
+.storeChoices label { min-height:44px; }
+.monitorCard summary { cursor:pointer; padding:12px 0; min-height:44px; }
+.historyTable { width:100%; border-collapse:collapse; table-layout:fixed; font-size:13px; }
+.historyTable th,.historyTable td { text-align:left; vertical-align:top; padding:10px 6px; border-bottom:1px solid var(--border); overflow-wrap:anywhere; }

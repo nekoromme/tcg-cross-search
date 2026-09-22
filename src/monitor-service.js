@@ -1,5 +1,6 @@
+import { normalizeUrlKey } from './search-common.js';
 import { accessDecision, networkGuard } from './access-limits.js';
-import { emptyMonitor, addRule, removeRule, publicMonitor, validateWebhook } from './monitor-core.js';
+import { emptyMonitor, activeTarget, activeJob, syncActivity, addRule, removeRule, publicMonitor, validateWebhook } from './monitor-core.js';
 import { runMonitorTick, sendDiscord } from './monitor-engine.js';
 import { STORE_MAP } from './stores.js';
 import { fetchHtml, handleStoreSearch } from './index.js';
@@ -46,23 +47,41 @@ export function makeMonitorIO(save, env = {}) {
       return {row:{title:parsed.title||'',price:parsed.price,stock:parsed.stock,priceState:parsed.priceState||'',
         detailChecked:Boolean(parsed.title),priceComparable:parsed.priceComparable,priceIssue:parsed.priceIssue},status:200};
     },
-    async discover(rule,storeId,task) {
+    async discover(rule,storeId,task,{pausedUrls=[]}={}) {
+      const paused=new Set(pausedUrls.map(url=>normalizeUrlKey(productUrl(url,storeId))));
       const params=new URLSearchParams({store:storeId,q:rule.query,sealed:'1',refresh:'1',depth:'standard',start:task.start||'',offset:String(task.offset||0),snapshot:task.snapshot||''});
-      return (await handleStoreSearch(new Request(`https://monitor.internal/api/search?${params}`),guard)).json();
+      return (await handleStoreSearch(new Request(`https://monitor.internal/api/search?${params}`),guard,{skipDetail:candidate=>{try{return paused.has(normalizeUrlKey(productUrl(candidate.url,storeId)));}catch{return false;}}})).json();
     },
     notify:(webhook,event)=>sendDiscord(webhook,{...event,storeName:STORE_MAP.get(event.storeId)?.name}),
   };
 }
 
 export async function monitorCommand(state, body, {minInterval=30}={}) {
+  const before=new Map(state.targets.map(t=>[t.id,activeTarget(state,t)]));
+  const now=Date.now();
   switch(body.action) {
     case 'add': addRule(state,body.rule,Array.isArray(body.seeds)?body.seeds:[]); break;
     case 'delete': removeRule(state,body.id); break;
     case 'toggle': {
       const rule=state.rules.find(r=>r.id===body.id); if(!rule)throw new Error('監視条件が見つかりません');
       rule.enabled=body.enabled===true;
-      if(rule.enabled) {for(const t of state.targets) if(t.ruleIds.includes(rule.id))t.nextAt=Date.now();for(const j of state.jobs)if(j.ruleId===rule.id)j.nextAt=Date.now();}
+      if(rule.enabled) {for(const t of state.targets) if(t.ruleIds.includes(rule.id))t.nextAt=Math.max(now,t.error?t.nextAt:0);for(const j of state.jobs)if(j.ruleId===rule.id)j.nextAt=Math.max(now,j.error?j.nextAt:0);}
       else for(const e of state.events)if(e.ruleId===rule.id&&e.delivery==='pending')e.delivery='cancelled';
+      break;
+    }
+    case 'store-toggle': {
+      if(!STORE_MAP.has(body.storeId)||typeof body.enabled!=='boolean')throw new Error('店舗の指定が不正です');
+      const disabled=new Set(state.disabledStoreIds||[]);
+      if(body.enabled)disabled.delete(body.storeId);else disabled.add(body.storeId);
+      state.disabledStoreIds=[...disabled];
+      // 再開後は新しい掲載の確認も順番に行う。店舗の接続休止時間は維持する。
+      if(body.enabled)for(const job of state.jobs)if(job.storeId===body.storeId)job.nextAt=Math.max(now,job.error?job.nextAt:0);
+      break;
+    }
+    case 'target-toggle': {
+      const target=state.targets.find(t=>t.id===body.id);
+      if(!target||typeof body.enabled!=='boolean')throw new Error('商品ページの指定が不正です');
+      target.enabled=body.enabled;
       break;
     }
     case 'settings': {
@@ -84,6 +103,7 @@ export async function monitorCommand(state, body, {minInterval=30}={}) {
     }
     default: throw new Error('操作が不正です');
   }
+  syncActivity(state,before,now);
 }
 
 // クラウド固有なのは保存と目覚ましだけ。ネットワークを待つ間の操作も直列化する。
@@ -108,7 +128,7 @@ export class InventoryMonitor {
     });
   }
   async schedule(state) {
-    if(state.enabled && (state.rules.some(r=>r.enabled)||state.events.some(e=>e.delivery==='pending')))
+    if(state.enabled && (state.jobs.some(j=>activeJob(state,j))||state.targets.some(t=>activeTarget(state,t))||state.events.some(e=>e.delivery==='pending')))
       await this.ctx.storage.setAlarm(Date.now()+30_000);
     else await this.ctx.storage.deleteAlarm();
   }
