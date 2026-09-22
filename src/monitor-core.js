@@ -4,7 +4,7 @@ import { isLikelyProductUrl, isJunkTitle, looksLikeSingleCard, normalizeUrlKey, 
 import { matchesQuery, comparePrice, identifyProduct, explicitGame } from '../public/catalog.js';
 import { productKind } from '../public/product-kind.js';
 
-export const LIMITS = { rules: 10, targets: 100, events: 80, intervalSeconds: 60, discoveryMs: 30 * 60_000 };
+export const LIMITS = { rules: 10, targets: 50, events: 80, intervalSeconds: 60, discoveryMs: 30 * 60_000 };
 export function emptyMonitor() {
   return { schema: 1, enabled: true, intervalSeconds: 60, webhook: '', rules: [], targets: [], jobs: [], events: [], hosts: {}, lastTick: null, error: '' };
 }
@@ -70,6 +70,7 @@ export function addRule(state, input, seeds = [], now = Date.now()) {
   const valid = validateRule(input), fingerprint = JSON.stringify(valid);
   const existing = state.rules.find(r=>JSON.stringify(r.config) === fingerprint);
   if (existing) return existing;
+  if(state.targets.length>=LIMITS.targets)throw new Error(`商品ページは最大${LIMITS.targets}件です。不要な監視条件を削除してください`);
   if (state.rules.length >= LIMITS.rules) throw new Error(`監視条件は最大${LIMITS.rules}件です`);
   const rule = { id: crypto.randomUUID(), config: valid, enabled: true, createdAt: now };
   state.rules.push(rule);
@@ -93,16 +94,34 @@ export function removeRule(state, id) {
   state.jobs = state.jobs.filter(j=>j.ruleId!==id);
   for (const t of state.targets) { t.ruleIds=t.ruleIds.filter(x=>x!==id); delete t.episodes[id]; }
   state.targets=state.targets.filter(t=>t.ruleIds.length);
+  if(state.targets.length<LIMITS.targets && state.error.startsWith('商品ページ'))state.error='';
   for (const event of state.events) if (event.ruleId===id && event.delivery==='pending') event.delivery='cancelled';
 }
-export function activeTarget(state, target) { return state.enabled && state.rules.some(r=>r.enabled && target.ruleIds.includes(r.id)); }
+export function activeTarget(state, target) {
+  // 旧版で51件以上登録済みでもデータを削除しない。超過分を待機させる。
+  return state.enabled && enabledTargets(state).slice(0,LIMITS.targets).includes(target);
+}
+function enabledTargets(state) {return state.targets.filter(t=>state.rules.some(r=>r.enabled && t.ruleIds.includes(r.id)));}
+export function effectiveInterval(state,target) {
+  const targets=enabledTargets(state).slice(0,LIMITS.targets);
+  const host=target && new URL(target.url).hostname.replace(/^www\./,'');
+  const hostCount=host?targets.filter(t=>new URL(t.url).hostname.replace(/^www\./,'')===host).length:0;
+  // 商品確認は約8000回/日、同一店は約1200回/日を目安に間隔を延長。
+  // 発見検索・手動検索の余裕を残す。最終的な制限は全端末共通の通信ゲートが担当。
+  return Math.max(state.intervalSeconds,Math.ceil(targets.length*86400/8000),Math.ceil(hostCount*86400/1200));
+}
+export function discoveryInterval(state) {
+  const jobs=state.jobs.filter(j=>state.rules.some(r=>r.id===j.ruleId&&r.enabled)).length;
+  // 1回4通信を目安に掲載検索を分散。続きの実通信数は共有上限でも制限する。
+  return Math.max(LIMITS.discoveryMs,Math.ceil(jobs*4*86400000/4000));
+}
 export function observe(state, target, row, now) {
   target.lastChecked=now;
   target.latest=row;
   const known = row.detailChecked && row.title && row.stock !== 'unknown' && ((row.price > 0 && row.priceComparable!==false) || row.stock==='out_of_stock');
   if (!known) { recordFailure(target, '商品名・在庫・価格を確認できず', now, state.intervalSeconds); return; }
   target.lastGood=row; target.lastGoodAt=now; target.title=row.title.slice(0,600); target.failures=0; target.error='';
-  target.nextAt=now+state.intervalSeconds*1000;
+  target.nextAt=now+effectiveInterval(state,target)*1000;
   for (const rule of state.rules.filter(r=>r.enabled && target.ruleIds.includes(r.id))) {
     const value=eligibility(row,rule.config);
     const episode=target.episodes[rule.id] ||= { active:false, negatives:0, lastEvent:0 };
@@ -134,5 +153,5 @@ export function recordFailure(target, message, now, intervalSeconds, status=0) {
 }
 export function publicMonitor(state, minInterval=30) {
   const {webhook,hosts,...rest}=state;
-  return { ...rest, notificationConfigured:Boolean(webhook), limits:LIMITS, minInterval };
+  return { ...rest, notificationConfigured:Boolean(webhook), limits:LIMITS, minInterval, load: { activePages:enabledTargets(state).slice(0,LIMITS.targets).length, waitingPages:Math.max(0,enabledTargets(state).length-LIMITS.targets), intervalSeconds:Math.max(effectiveInterval(state),...enabledTargets(state).slice(0,LIMITS.targets).map(t=>effectiveInterval(state,t))), discoverySeconds:Math.ceil(discoveryInterval(state)/1000) } };
 }

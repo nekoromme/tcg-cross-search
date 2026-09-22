@@ -2,7 +2,7 @@
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>自動在庫監視 | TCG横断検索</title><link rel="stylesheet" href="/styles.css?v=0.8.0"><link rel="stylesheet" href="/monitor.css?v=0.8.0"></head>
 <body><main class="wrap">
   <header><a href="/">← 横断検索へ</a><h1>自動在庫監視</h1><p>画面を閉じても商品ページの確認を続けます。条件を満たす在庫・予約を見つけたら記録し、設定したDiscordへ通知します。</p></header>
-  <section class="panel"><p id="message" role="status" aria-live="polite">読み込み中…</p><div id="overview"></div><div class="monitorActions"><button id="refresh" type="button">表示を更新</button><button id="pauseAll" type="button">全体を一時停止</button></div></section>
+  <section class="panel"><p id="message" role="status" aria-live="polite">読み込み中…</p><div id="overview"></div><p id="loadLimits" class="help"></p><div class="monitorActions"><button id="refresh" type="button">表示を更新</button><button id="pauseAll" type="button">全体を一時停止</button></div></section>
   <details id="addPanel" class="panel" open><summary>監視する商品を追加</summary><form id="addForm">
     <label>商品名・型番<input id="monitorQuery" required minlength="2" maxlength="100" placeholder="例：GD04"></label>
     <div class="monitorGrid">
@@ -13,13 +13,13 @@
     </div>
     <label class="check"><input id="monitorPreorder" type="checkbox" checked>予約受付も通知する</label>
     <label class="check"><input id="monitorUnknown" type="checkbox">定価が分からない商品も通知する</label>
-    <p class="help">対象ゲームを扱う登録店を順に検索します。新しい掲載は各店30分以上あけて順番に探します。送料は価格条件に含みません。登録時に購入できる商品も初回に通知します。</p>
+    <p class="help">対象ゲームを扱う登録店を順に検索します。新しい掲載は各店30分以上あけ、条件が増えると自動で間隔を延ばして順番に探します。送料は価格条件に含みません。登録時に購入できる商品も初回に通知します。</p>
     <button type="submit">この条件で監視を開始</button>
   </form></details>
   <section class="panel"><h2>監視中の条件</h2><div id="rules"></div></section>
   <details class="panel"><summary>通知先と監視間隔</summary><form id="settingsForm">
     <label>商品ページの確認間隔<select id="interval"><option value="30">30秒</option><option value="60" selected>60秒</option><option value="180">3分</option><option value="300">5分</option></select></label>
-    <p class="help">間隔は目安です。同じ店の商品は最低30秒あけて順番に確認し、混雑・通信失敗時には長くなります。拒否された店は30分休止します。</p>
+    <p class="help">指定した間隔より短くはしません。商品数が多い場合はアクセスを抑えるため自動で間隔を延ばします。同じ店の商品は最低30秒あけて順番に確認し、混雑・通信失敗時には長くなります。拒否された店は30分休止します。</p>
     <label>Discordの通知用URL<input id="webhook" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/…"></label>
     <p id="notificationState" class="help"></p><p class="help">Discordの通知先チャンネル → 設定 → 連携サービス → ウェブフックで作成したURLを貼り付けます。未設定でも監視と履歴保存は動きますが、画面を閉じている間の通知は届きません。</p>
     <div class="monitorActions"><button type="submit">設定を保存</button><button id="testNotification" type="button">テスト通知を送る</button><button id="removeNotification" type="button">通知先を解除</button></div>
@@ -34,4 +34,4 @@
     <p class="help">切り替えても元の監視は停止しません。サーバー移行は、全体を一時停止してから書き出してください。通知先URLと合言葉は書き出しファイルに含めません。</p>
     <button id="exportState" type="button">移行用データを書き出す</button>
   </details>
-</main><script type="module" src="/monitor.js?v=0.8.0.1"></script></body></html>
+</main><script type="module" src="/monitor.js?v=0.8.2"></script></body></html>

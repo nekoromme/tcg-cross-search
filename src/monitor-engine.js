@@ -1,5 +1,5 @@
 // スケジュールと保存先を外から渡す。移行しても在庫判定・通知履歴を変えない。
-import { LIMITS, activeTarget, addTarget, matchesRule, observe, recordFailure, validateWebhook } from './monitor-core.js';
+import { LIMITS, effectiveInterval, discoveryInterval, activeTarget, addTarget, matchesRule, observe, recordFailure, validateWebhook } from './monitor-core.js';
 
 export async function runMonitorTick(state, io) {
   const now=io.now?.() ?? Date.now();
@@ -20,11 +20,12 @@ export async function runMonitorTick(state, io) {
     if (selected.length===6) break;
   }
   // 次の予定を保存してから接続する。途中で実行環境が再起動しても連打しない。
-  for (const t of selected) t.nextAt=now+state.intervalSeconds*1000;
+  for (const t of selected) t.nextAt=now+effectiveInterval(state,t)*1000;
   await io.save(state);
   await Promise.all(selected.map(async t=>{
     try {
       const response=await io.check(t);
+      if(response.deferred) {t.nextAt=response.retryAt;t.error=response.error;return;}
       if (response.error) recordFailure(t,response.error,now,state.intervalSeconds,response.status);
       else observe(state,t,response.row,now);
       if ([403,429].includes(response.status)) state.hosts[new URL(t.url).hostname]=now+1800_000;
@@ -36,11 +37,12 @@ export async function runMonitorTick(state, io) {
   if (job) {
     const host=io.storeHost(job.storeId), rule=state.rules.find(r=>r.id===job.ruleId);
     state.hosts[host]=now+30_000;
-    job.nextAt=now+LIMITS.discoveryMs;
+    job.nextAt=now+discoveryInterval(state);
     const task=job.queue.shift() || {start:'',offset:0};
     await io.save(state);
     try {
       const result=await io.discover(rule.config,job.storeId,task);
+      if(result.accessLimited)throw Object.assign(new Error(result.error),{accessLimited:true,retryAt:result.retryAt});
       if (['error','blocked'].includes(result.status)) throw Object.assign(new Error('検索ページを取得できず'),{status:result.httpStatus});
       for (const row of result.results||[]) if (matchesRule(row,rule.config)) {
         try { addTarget(state,rule,{...row,storeId:job.storeId},now); } catch { /* 店舗外リンクは登録しない。 */ }
@@ -57,7 +59,8 @@ export async function runMonitorTick(state, io) {
         job.queue=[]; job.seen=[]; job.rounds=0;
       }
     } catch (error) {
-      job.error='検索ページの取得失敗。時間をあけて再試行'; job.queue.unshift(task);
+      job.error=error.accessLimited?error.message:'検索ページの取得失敗。時間をあけて再試行'; job.queue.unshift(task);
+      if(error.accessLimited)job.nextAt=error.retryAt;
       if ([403,429].includes(error.status)) state.hosts[host]=now+1800_000;
     }
   }

@@ -16,7 +16,7 @@ test('Dayya discovers only the two published sealed categories and confirms scop
     const category=new URL(url).searchParams.get('category_id');
     return new Response(category ? '<main><a href="/products/detail/11">別作品のブースターパック BOX</a></main>' : menu+'<main></main>');
   });
-  const data=await (await worker.fetch(request('dayya','GD04'),{})).json();
+  const data=await (await worker.fetch(request('dayya','GD04'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(data.status,'no_hit'); assert.equal(data.coverage.noHitConfirmed,true);
   assert.deepEqual(data.coverage.categories.map(x=>x.complete),[true,true]);
 });
@@ -28,13 +28,13 @@ test('category fallback recovers matching product and checks its detail',async t
     if(u.searchParams.has('category_id')) return new Response('<main><a href="/products/detail/11">GD04 BOX</a></main>');
     return new Response(menu+'<main></main>');
   });
-  const data=await (await worker.fetch(request('dayya','GD04'),{})).json();
+  const data=await (await worker.fetch(request('dayya','GD04'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(data.results.length,1); assert.equal(data.results[0].price,5808);
 });
 
 test('empty or broken category pages cannot turn unknown into confirmed absence',async t=>{
   t.mock.method(globalThis,'fetch',async url=>new Response(new URL(url).searchParams.has('category_id')?'<main></main>':menu));
-  const data=await (await worker.fetch(request('dayya','GD04'),{})).json();
+  const data=await (await worker.fetch(request('dayya','GD04'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(data.coverage.noHitConfirmed,false);
   assert.ok(data.coverage.partialReasons.length);
 });
@@ -53,7 +53,7 @@ test('zero price plus sold out becomes unavailable; unknown stock is still unres
 test('continuations read past the first 8 candidates and finish every detail in small batches',async t=>{
   const html=Array.from({length:13},(_,n)=>`<a href="/product/${n+1}">GD04 BOX</a>`).join('');
   t.mock.method(globalThis,'fetch',async url=>new URL(url).pathname==='/product-list'?new Response(html):new Response('<h1>GD04 BOX</h1>販売価格5808円 在庫なし'));
-  const data=await collectStoreResults(async task=> (await worker.fetch(request('masters_gundam','GD04',`&offset=${task.offset}`),{})).json());
+  const data=await collectStoreResults(async task=> (await worker.fetch(request('masters_gundam','GD04',`&offset=${task.offset}`), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json());
   assert.equal(data.results.length,13);
   assert.ok(data.results.every(r=>r.detailChecked));
   assert.equal(data.continuations.length,0);
@@ -66,7 +66,7 @@ test('following a next-page continuation preserves earlier offers and verifies t
     const p=u.searchParams.get('page')||'1';
     return new Response(`<a href="/product/${p}">GD04 BOX</a>`+(p==='1'?'<a href="?keyword=GD04&page=2">次へ</a>':''));
   });
-  const data=await collectStoreResults(async task=> (await worker.fetch(request('masters_gundam','GD04',task.start?`&start=${encodeURIComponent(task.start)}`:''),{})).json());
+  const data=await collectStoreResults(async task=> (await worker.fetch(request('masters_gundam','GD04',task.start?`&start=${encodeURIComponent(task.start)}`:''), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json());
   assert.equal(data.results.length,2); assert.equal(data.continuations.length,0);
 });
 

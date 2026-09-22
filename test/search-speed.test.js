@@ -13,7 +13,7 @@ function memoryCache(t) {
 }
 function search(task,query='GD04') {
   const params=new URLSearchParams({store:'masters_gundam',q:query,refresh:'1',start:task.start||'',offset:String(task.offset||0),snapshot:task.snapshot||''});
-  return worker.fetch(new Request(`https://app.test/api/search?${params}`),{}).then(r=>r.json());
+  return worker.fetch(new Request(`https://app.test/api/search?${params}`), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})}).then(r=>r.json());
 }
 const listing=Array.from({length:13},(_,i)=>`<a href="/product/${i+1}">GD04 BOX</a>`).join('');
 
@@ -70,7 +70,7 @@ test('Day屋の2カテゴリを同時に確認し、片方が壊れていれば�
     await new Promise(resolve=>{waiting.push(resolve);if(waiting.length===2)waiting.forEach(r=>r());});active--;
     return new Response(category==='1'?'<main><a href="/products/detail/1">別作品BOX</a></main>':'<main></main>');
   });
-  const result=await(await worker.fetch(new Request('https://app.test/api/search?store=dayya&q=GD04'),{})).json();
+  const result=await(await worker.fetch(new Request('https://app.test/api/search?store=dayya&q=GD04'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(max,2);assert.equal(result.coverage.categories.length,2);assert.equal(result.coverage.noHitConfirmed,false);assert(result.coverage.partialReasons.length);
 });
 test('通信は上限以内で、追加確認より未着手の店舗を先に進める',async()=>{

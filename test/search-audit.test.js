@@ -56,7 +56,7 @@ test('GD04 buried under singles is recovered using one store-specific fallback',
       return new Response('<a href="/view/item/000000015991">【GD04】「Phantom Aria」ボックス（24パック）</a>');
     return new Response('<a href="/view/item/000000012345">【LR】カード《GD04-001》</a>');
   });
-  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=tier1_gundam&q=GD04'), {})).json();
+  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=tier1_gundam&q=GD04'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.deepEqual(requests.filter(u => u.pathname === '/view/search').map(u => u.searchParams.get('search_keyword')), ['GD04', 'GD04 ボックス']);
   assert.equal(data.coverage.requests, 3);
   assert.equal(data.results.length, 1);

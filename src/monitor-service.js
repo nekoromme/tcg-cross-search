@@ -1,3 +1,4 @@
+import { accessDecision, networkGuard } from './access-limits.js';
 import { emptyMonitor, addRule, removeRule, publicMonitor, validateWebhook } from './monitor-core.js';
 import { runMonitorTick, sendDiscord } from './monitor-engine.js';
 import { STORE_MAP } from './stores.js';
@@ -29,11 +30,14 @@ export async function routeMonitor(request, env) {
   return env.MONITORS.get(env.MONITORS.idFromName(id)).fetch(request);
 }
 
-export function makeMonitorIO(save) {
+export function makeMonitorIO(save, env = {}) {
+  const guard=networkGuard(env,'monitor');
   return { save, storeHost:id=>new URL(STORE_MAP.get(id).home).hostname,
     async check(target) {
       const url=productUrl(target.url,target.storeId);
-      const page=await fetchHtml(url,900_000,{requests:0,deadline:Date.now()+30_000});
+      let page;
+      try{page=await fetchHtml(url,900_000,{requests:0,deadline:Date.now()+30_000,guard});}
+      catch(error){if(error.accessLimited)return {deferred:true,retryAt:error.retryAt,error:error.message};throw error;}
       if(page.status!==200) return {error:`商品ページ HTTP ${page.status}`,status:page.status};
       if(page.truncated) return {error:'商品ページの容量上限で未確認'};
       const parsed=parseProductDetail(page.text);
@@ -44,7 +48,7 @@ export function makeMonitorIO(save) {
     },
     async discover(rule,storeId,task) {
       const params=new URLSearchParams({store:storeId,q:rule.query,sealed:'1',refresh:'1',depth:'standard',start:task.start||'',offset:String(task.offset||0),snapshot:task.snapshot||''});
-      return (await handleStoreSearch(new Request(`https://monitor.internal/api/search?${params}`))).json();
+      return (await handleStoreSearch(new Request(`https://monitor.internal/api/search?${params}`),guard)).json();
     },
     notify:(webhook,event)=>sendDiscord(webhook,{...event,storeName:STORE_MAP.get(event.storeId)?.name}),
   };
@@ -109,6 +113,14 @@ export class InventoryMonitor {
     else await this.ctx.storage.deleteAlarm();
   }
   fetch(request) {return this.serial(async()=>{
+    // 外部公開ルートにはこのパスを用意しない。共有の保存先へ内部からのみ呼ぶ。
+    if(new URL(request.url).pathname==='/internal/access-budget') {
+      const command=await readCommand(request), counters=await this.ctx.storage.get('access-budget')||{};
+      const result=accessDecision(counters,command);
+      await this.ctx.storage.put('access-budget',counters);
+      if(!result.ok)console.info(JSON.stringify({event:'access_limit_wait',kind:command.kind||'manual',reason:result.error,retryAt:result.retryAt}));
+      return monitorResponse(result);
+    }
     const state=await this.load();
     try {
       if(request.method==='POST') {
@@ -127,7 +139,7 @@ export class InventoryMonitor {
     const state=await this.load();
     // 致命的な中断が起きても次回を残す。通常の終了時に30秒後へ調整する。
     if(state.enabled&&state.rules.some(r=>r.enabled))await this.ctx.storage.setAlarm(Date.now()+60_000);
-    try {await runMonitorTick(state,makeMonitorIO(s=>this.save(s)));}
+    try {await runMonitorTick(state,makeMonitorIO(s=>this.save(s),this.env));}
     catch {state.error='巡回処理が中断しました。次回に再試行します';await this.save(state);}
     await this.schedule(state);
     console.info(JSON.stringify({event:'inventory_tick',rules:state.rules.length,targets:state.targets.length,

@@ -161,11 +161,11 @@ test('wide search reaches a BOX on page two; standard reports an unread continua
     if (u.searchParams.get('page') === '2') return new Response('<a href="/product/8">GD05 BOX</a>');
     return new Response('<a href="/product/1">GD05-001 R</a><a href="?page=2">次へ</a>');
   });
-  const standard = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD05'),{})).json();
+  const standard = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD05'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(standard.results.length,0);
   assert.ok(standard.coverage.nextPageUrl);
   requested.length = 0;
-  const wide = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD05&depth=wide'),{})).json();
+  const wide = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD05&depth=wide'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(wide.results.length,1);
   assert.equal(wide.results[0].comparison.status,'known');
   assert.equal(wide.coverage.pagesRead,2);
@@ -181,7 +181,7 @@ test('later 429 preserves first page results without retrying an alternate searc
     if(u.searchParams.has('page'))return new Response('blocked',{status:429});
     return new Response('<a href="/product/1">GD03 BOX</a><a href="?page=2">次へ</a>');
   });
-  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD03&depth=wide'),{})).json();
+  const data = await (await worker.fetch(new Request('https://app.test/api/search?store=masters_gundam&q=GD03&depth=wide'), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(data.results.length,1);
   assert.ok(data.coverage.partialReasons.some(r=>r.includes('429')));
   assert.equal(urls.length,3);
@@ -191,10 +191,11 @@ test('first-page rejection is not retried and redirects cannot leave a configure
   let calls=0;
   const mock = t.mock.method(globalThis,'fetch',async()=> {calls++;return new Response('blocked',{status:403});});
   const url='https://app.test/api/search?store=masters_gundam&q=GD03&depth=wide';
-  assert.equal((await (await worker.fetch(new Request(url),{})).json()).status,'blocked');
+  assert.equal((await (await worker.fetch(new Request(url), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json()).status,'blocked');
   assert.equal(calls,1);
   mock.mock.mockImplementation(async()=>new Response(null,{status:302,headers:{location:'https://other.test/private'}}));
-  const data=await (await worker.fetch(new Request(url),{})).json();
+  const data=await (await worker.fetch(new Request(url), {ACCESS_CONTROL:async()=>({ok:true,id:'test'})})).json();
   assert.equal(data.status,'error');
   assert.match(data.error,/店舗外/);
 });
+
