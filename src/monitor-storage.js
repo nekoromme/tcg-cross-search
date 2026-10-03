@@ -27,5 +27,7 @@ export function monitorFailure(error,stage) {
   const code=/quota|daily.*limit|rows.*(?:limit|written)|exceeded.*(?:storage|write)|D1_ERROR.*limit/i.test(message)?'storage_quota'
     :/snapshot|chunk|JSON|Unexpected token/i.test(message)?'storage_data'
     :/CPU|memory|resource.*limit/i.test(message)?'runtime_limit':'monitor_unavailable';
-  return {code,stage,name:String(error?.name||'Error').slice(0,40),at:Date.now()};
+  // 上限の種類を絞れる既知の単語だけを残す。例外本文・識別子は公開しない。
+  const limitTerms=['daily','rows','written','writes','reads','duration','requests','CPU','storage','database','quota','limit'].filter(term=>new RegExp(`\\b${term}\\b`,'i').test(message));
+  return {code,stage,name:String(error?.name||'Error').slice(0,40),limitTerms,at:Date.now()};
 }
