@@ -19,9 +19,6 @@ const squareCount = count('https://www.masters-square.com/pickup');
 // 追加バッチの確認日。出典は通常の日本語版1BOXの価格・仕様に限る。
 const checked = extra => ({ checkedAt: '2026-09-08', ...extra });
 export const PRODUCTS = [
-  entry('onepiece', 'EB-04', 'EGGHEAD CRISIS', '2026-01-31', null, 'unconfirmed_box',
-    [official('https://www.onepiece-cardgame.com/products/?page=1&subcategory=boosters')],
-    { checkedAt:'2026-10-03', searchTerm:'EB-04' }),
   entry('pokemon', 'M6a', '30th CELEBRATION', '2026-09-16', 7200, 'official_box',
     [official('https://www.30th.pokemon-card.com/product/m6a'), box('https://www.pokemon-card.com/info/005510.html')],
     { checkedAt:'2026-10-03', searchTerm:'30th CELEBRATION', aliases:['30th','30周年 セレブレーション'] }),
