@@ -11,7 +11,7 @@ import { networkGuard } from './access-limits.js';
 import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.10.2';
+const APP_VERSION = '0.10.3';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
