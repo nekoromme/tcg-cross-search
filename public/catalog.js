@@ -2,9 +2,9 @@ import { PRODUCTS, CATALOG_UPDATED } from './catalog-data.js';
 import { productKind, isSpecialSet } from './product-kind.js';
 export { PRODUCTS, CATALOG_UPDATED };
 
-export const GAMES = { pokemon: 'ポケモンカード', onepiece: 'ワンピース', gundam: 'ガンダム', dragonball: 'ドラゴンボール（フュージョンワールド）', lorcana: 'ロルカナ' };
+export const GAMES = { pokemon: 'ポケモンカード', onepiece: 'ワンピース', gundam: 'ガンダム', dragonball: 'ドラゴンボール（フュージョンワールド）', lorcana: 'ロルカナ', yugioh: '遊戯王' };
 const GAME_PATTERNS = { pokemon: /ポケモン|ポケカ|pokemon/i, onepiece: /ワンピース|one\s*piece/i,
-  gundam: /ガンダム|gundam/i, dragonball: /ドラゴンボール|dragon\s*ball|フュージョンワールド/i, lorcana: /ロルカナ|lorcana/i };
+  gundam: /ガンダム|gundam/i, dragonball: /ドラゴンボール|dragon\s*ball|フュージョンワールド/i, lorcana: /ロルカナ|lorcana/i, yugioh: /遊[☆★・]?戯[☆★・]?王|yu.?gi.?oh/i };
 export function normalized(value) {
   return String(value || '').normalize('NFKC').toLowerCase().replace(/[\s\-‐‑–—_【】「」『』()（）・:：]/g, '');
 }

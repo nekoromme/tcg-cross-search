@@ -1,5 +1,5 @@
 // 公式価格と入数の出典を確認した商品だけを追加する。未登録の商品へ価格を推測しない。
-export const CATALOG_UPDATED = '2026-09-08';
+export const CATALOG_UPDATED = '2026-10-03';
 const source = (label, url) => ({ label, url });
 const official = url => source('公式商品情報', url);
 const box = url => source('公式BOX価格・仕様', url);
@@ -19,6 +19,9 @@ const squareCount = count('https://www.masters-square.com/pickup');
 // 追加バッチの確認日。出典は通常の日本語版1BOXの価格・仕様に限る。
 const checked = extra => ({ checkedAt: '2026-09-08', ...extra });
 export const PRODUCTS = [
+  entry('pokemon', 'M6a', '30th CELEBRATION', '2026-09-16', 7200, 'official_box',
+    [official('https://www.30th.pokemon-card.com/product/m6a'), box('https://www.pokemon-card.com/info/005510.html')],
+    { checkedAt:'2026-10-03', searchTerm:'30th CELEBRATION', aliases:['30th','30周年 セレブレーション'] }),
   entry('pokemon', 'M1L', 'メガブレイブ', '2025-08-01', 5400, 'official_box',
     [official(pokemon+'m1/index.html'), box(center+'9900000006211.html')], checked({ searchTerm:'メガブレイブ' })),
   entry('pokemon', 'M1S', 'メガシンフォニア', '2025-08-01', 5400, 'pack_times_count',

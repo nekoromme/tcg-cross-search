@@ -3,9 +3,11 @@ import { recordHistory, pruneHistory, HISTORY_LIMITS } from './monitor-history.j
 import { STORE_MAP, STORES } from './stores.js';
 import { isLikelyProductUrl, isJunkTitle, looksLikeSingleCard, normalizeUrlKey, sanitizeQuery } from './search-common.js';
 import { matchesQuery, comparePrice, identifyProduct, explicitGame } from '../public/catalog.js';
-import { productKind } from '../public/product-kind.js';
+import { productKind, isSpecialSet } from '../public/product-kind.js';
 
 export const LIMITS = { rules: 10, targets: 50, events: 80, intervalSeconds: 60, discoveryMs: 30 * 60_000 };
+export function monitorLimits(state) { return state.automatic?.enabled ? {...LIMITS,rules:80,targets:500,events:500} : LIMITS; }
+export function ruleEnabled(rule) { return rule.enabled && !rule.autoRetired; }
 export function emptyMonitor() {
   return { schema: 1, enabled: true, intervalSeconds: 60, webhook: '', rules: [], targets: [], jobs: [], events: [], disabledStoreIds: [], hosts: {}, lastTick: null, error: '' };
 }
@@ -13,7 +15,7 @@ export function validateRule(input) {
   const query = sanitizeQuery(input.query);
   if (query.length < 2 || query.length > 100) throw new Error('監視する商品名・型番を2〜100文字で入力して');
   const game = String(input.game || '');
-  if (!['', 'pokemon', 'onepiece', 'gundam', 'dragonball', 'lorcana'].includes(game)) throw new Error('ゲームの指定が不正です');
+  if (!['', 'pokemon', 'onepiece', 'gundam', 'dragonball', 'lorcana', 'yugioh'].includes(game)) throw new Error('ゲームの指定が不正です');
   const unit = input.unit || 'box';
   if (!['box', 'sealed'].includes(unit)) throw new Error('監視はBOXまたはBOX＋カートンに対応しています');
   const priceLimit = String(input.priceLimit || '105');
@@ -48,7 +50,10 @@ export function validateWebhook(value) {
   return url.href;
 }
 export function matchesRule(row, rule) {
-  if (!row.title || !matchesQuery(row.title, rule.query) || isJunkTitle(row.title) || looksLikeSingleCard(row.title)) return false;
+  if (!row.title || isJunkTitle(row.title) || looksLikeSingleCard(row.title)) return false;
+  const p=rule.automaticProduct;
+  if(!matchesQuery(row.title,rule.query) && !(p?.aliases||[]).some(alias=>matchesQuery(row.title,alias)))return false;
+  if(p && (isSpecialSet(row.title) || /FUTURISTIC|プレミアムデッキ|カードセット/i.test(row.title) || /英語版|海外版|中国語|韓国語|繁体|繁體|簡体|简体|english|中古|開封済|空箱/i.test(row.title)))return false;
   const game = explicitGame(row.title) || identifyProduct(row.title)?.game;
   if (game && rule.game && game !== rule.game) return false;
   return (rule.unit === 'box' ? ['box'] : ['box','carton','bundle']).includes(productKind(row.title));
@@ -71,8 +76,9 @@ export function addRule(state, input, seeds = [], now = Date.now()) {
   const valid = validateRule(input), fingerprint = JSON.stringify(valid);
   const existing = state.rules.find(r=>JSON.stringify(r.config) === fingerprint);
   if (existing) return existing;
-  if(state.targets.length>=LIMITS.targets)throw new Error(`商品ページは最大${LIMITS.targets}件です。不要な監視条件を削除してください`);
-  if (state.rules.length >= LIMITS.rules) throw new Error(`監視条件は最大${LIMITS.rules}件です`);
+  const limits=monitorLimits(state);
+  if(state.targets.length>=limits.targets)throw new Error(`商品ページは最大${limits.targets}件です。不要な監視条件を削除してください`);
+  if (state.rules.filter(r=>!r.autoRetired).length >= limits.rules) throw new Error(`監視条件は最大${limits.rules}件です`);
   const rule = { id: crypto.randomUUID(), config: valid, enabled: true, createdAt: now };
   state.rules.push(rule);
   state.jobs.push(...valid.storeIds.map(storeId=>({ ruleId: rule.id, storeId, nextAt: now, queue: [], seen: [], rounds: 0, lastAt: null, error: '' })));
@@ -83,11 +89,15 @@ export function addTarget(state, rule, row, now) {
   const url = productUrl(row.url, row.storeId), key = `${row.storeId}:${normalizeUrlKey(url)}`;
   let target = state.targets.find(t=>t.key===key);
   if (!target) {
-    if (state.targets.length >= LIMITS.targets) { state.error = `商品ページが${LIMITS.targets}件の上限。不要な監視条件を削除してください`; return null; }
+    const limits=monitorLimits(state);
+    // 一つの弾だけで全枠を埋めない。各弾の未確認店も検索ログに残す。
+    if(rule.automaticProductId && state.targets.filter(t=>t.ruleIds.includes(rule.id)).length>=12)return null;
+    if (state.targets.length >= limits.targets) { state.error = `商品ページが${limits.targets}件の上限。追加候補は検索ログを確認してください`; return null; }
     target = { id: crypto.randomUUID(), key, storeId: row.storeId, url, title: String(row.title).slice(0,600), ruleIds: [], episodes: {}, nextAt: now, failures: 0, lastChecked: null, lastGood: null, error: '' };
     state.targets.push(target);
   }
   if (!target.ruleIds.includes(rule.id)) target.ruleIds.push(rule.id);
+  if(rule.config.automaticProduct?.releaseDate)target.releaseDate=rule.config.automaticProduct.releaseDate;
   return target;
 }
 export function removeRule(state, id) {
@@ -95,21 +105,21 @@ export function removeRule(state, id) {
   state.jobs = state.jobs.filter(j=>j.ruleId!==id);
   for (const t of state.targets) { t.ruleIds=t.ruleIds.filter(x=>x!==id); delete t.episodes[id]; }
   state.targets=state.targets.filter(t=>t.ruleIds.length);
-  if(state.targets.length<LIMITS.targets && state.error.startsWith('商品ページ'))state.error='';
+  if(state.targets.length<monitorLimits(state).targets && state.error.startsWith('商品ページ'))state.error='';
   for (const event of state.events) if (event.ruleId===id && event.delivery==='pending') event.delivery='cancelled';
 }
 export function activeTarget(state, target) {
   // 旧版で51件以上登録済みでもデータを削除しない。超過分を待機させる。
-  return state.enabled && enabledTargets(state).slice(0,LIMITS.targets).includes(target);
+  return state.enabled && enabledTargets(state).slice(0,monitorLimits(state).targets).includes(target);
 }
 export function storeEnabled(state,storeId) {return !(state.disabledStoreIds||[]).includes(storeId);}
-export function activeJob(state,job) {return state.enabled && storeEnabled(state,job.storeId) && state.rules.some(r=>r.id===job.ruleId&&r.enabled);}
-function enabledTargets(state) {return state.targets.filter(t=>t.enabled!==false && storeEnabled(state,t.storeId) && state.rules.some(r=>r.enabled && t.ruleIds.includes(r.id)));}
+export function activeJob(state,job) {return state.enabled && storeEnabled(state,job.storeId) && state.rules.some(r=>r.id===job.ruleId&&ruleEnabled(r));}
+function enabledTargets(state) {return state.targets.filter(t=>t.enabled!==false && storeEnabled(state,t.storeId) && state.rules.some(r=>ruleEnabled(r) && t.ruleIds.includes(r.id)));}
 export function targetStatus(state,target) {
   if(!state.enabled)return '全体を停止中';
   if(target.enabled===false)return 'このページをOFF';
   if(!storeEnabled(state,target.storeId))return '店舗をOFF';
-  if(!state.rules.some(r=>r.enabled&&target.ruleIds.includes(r.id)))return '監視条件を停止中';
+  if(!state.rules.some(r=>ruleEnabled(r)&&target.ruleIds.includes(r.id)))return '監視条件を停止中';
   return activeTarget(state,target)?'監視中':'登録上限のため待機';
 }
 // ON/OFFの変更は既存の価格・通知履歴を消さず、予定と通知待ちだけを調整する。
@@ -127,15 +137,22 @@ export function syncActivity(state,before,now=Date.now()) {
   }
 }
 export function effectiveInterval(state,target) {
-  const targets=enabledTargets(state).slice(0,LIMITS.targets);
+  const targets=enabledTargets(state).slice(0,monitorLimits(state).targets);
   const host=target && new URL(target.url).hostname.replace(/^www\./,'');
   const hostCount=host?targets.filter(t=>new URL(t.url).hostname.replace(/^www\./,'')===host).length:0;
   // 商品確認は約8000回/日、同一店は約1200回/日を目安に間隔を延長。
   // 発見検索・手動検索の余裕を残す。最終的な制限は全端末共通の通信ゲートが担当。
+  const pinned=t=>state.rules.some(r=>ruleEnabled(r)&&t.ruleIds.includes(r.id)&&r.config.automaticProduct?.pinned);
+  const pinnedCount=targets.filter(pinned).length;
+  if(state.automatic?.enabled && target && pinnedCount) {
+    const important=pinned(target), count=important?pinnedCount:Math.max(1,targets.length-pinnedCount);
+    const budget=important?6000:2000;
+    return Math.max(state.intervalSeconds,Math.ceil(count*86400/budget),Math.ceil(hostCount*86400/1200));
+  }
   return Math.max(state.intervalSeconds,Math.ceil(targets.length*86400/8000),Math.ceil(hostCount*86400/1200));
 }
 export function discoveryInterval(state) {
-  const jobs=state.jobs.filter(j=>storeEnabled(state,j.storeId)&&state.rules.some(r=>r.id===j.ruleId&&r.enabled)).length;
+  const jobs=state.jobs.filter(j=>storeEnabled(state,j.storeId)&&state.rules.some(r=>r.id===j.ruleId&&ruleEnabled(r))).length;
   // 1回4通信を目安に掲載検索を分散。続きの実通信数は共有上限でも制限する。
   return Math.max(LIMITS.discoveryMs,Math.ceil(jobs*4*86400000/4000));
 }
@@ -147,7 +164,7 @@ export function observe(state, target, row, now) {
   recordHistory(target,{kind:'observation',stock:row.stock,price:row.price,comparable:row.priceComparable},now);
   target.lastGood=row; target.lastGoodAt=now; target.title=row.title.slice(0,600); target.failures=0; target.error='';
   target.nextAt=now+effectiveInterval(state,target)*1000;
-  for (const rule of state.rules.filter(r=>r.enabled && target.ruleIds.includes(r.id))) {
+  for (const rule of state.rules.filter(r=>ruleEnabled(r) && target.ruleIds.includes(r.id))) {
     const value=eligibility(row,rule.config);
     const episode=target.episodes[rule.id] ||= { active:false, negatives:0, lastEvent:0 };
     if (value===null) continue;
@@ -164,7 +181,7 @@ export function observe(state, target, row, now) {
         price:row.price, stock:row.stock, delivery:state.webhook?'pending':'screen', attempts:0, nextAt:now };
       // 同じ商品が複数条件に当たっても、同じ巡回の通知は1件にまとめる。
       if(!state.events.some(e=>e.targetId===target.id&&e.at===now))state.events.unshift(event);
-      state.events=state.events.slice(0,LIMITS.events);
+      state.events=state.events.slice(0,monitorLimits(state).events);
       episode.lastEvent=now;
       episode.active=true;
     }
@@ -180,5 +197,5 @@ export function recordFailure(target, message, now, intervalSeconds, status=0) {
 export function publicMonitor(state, minInterval=30) {
   const {webhook,hosts,...rest}=state;
   const targets=state.targets.map(t=>({...t,history:pruneHistory({...t}),monitorStatus:targetStatus(state,t),monitorActive:activeTarget(state,t)}));
-  return { ...rest, targets, historyLimits:HISTORY_LIMITS, notificationConfigured:Boolean(webhook), limits:LIMITS, minInterval, load: { activePages:enabledTargets(state).slice(0,LIMITS.targets).length, waitingPages:Math.max(0,enabledTargets(state).length-LIMITS.targets), intervalSeconds:Math.max(effectiveInterval(state),...enabledTargets(state).slice(0,LIMITS.targets).map(t=>effectiveInterval(state,t))), discoverySeconds:Math.ceil(discoveryInterval(state)/1000) } };
+  return { ...rest, targets, historyLimits:HISTORY_LIMITS, notificationConfigured:Boolean(webhook), limits:monitorLimits(state), minInterval, load: { activePages:enabledTargets(state).slice(0,monitorLimits(state).targets).length, waitingPages:Math.max(0,enabledTargets(state).length-monitorLimits(state).targets), intervalSeconds:Math.max(effectiveInterval(state),...enabledTargets(state).slice(0,monitorLimits(state).targets).map(t=>effectiveInterval(state,t))), discoverySeconds:Math.ceil(discoveryInterval(state)/1000) } };
 }
