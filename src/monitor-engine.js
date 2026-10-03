@@ -16,11 +16,11 @@ export async function runMonitorTick(state, io) {
   }
   // 旧送信形式で失敗していた通知を、この修正後に一度だけ再開する。
   // 送信済みは触らず、古い在庫通知は下の鮮度確認で取り消して再取得する。
-  if(state.deliveryVersion!==3) {
+  if(state.deliveryVersion!==4) {
     for(const event of state.events)if(['pending','failed'].includes(event.delivery)&&event.error) {
       event.delivery='pending';event.attempts=0;event.nextAt=now;
     }
-    state.deliveryVersion=3;
+    state.deliveryVersion=4;
   }
   const usedHosts=new Set();
   // 発見検索の枠を先に確保する。30秒監視の店舗でも発見検索が永久に後回しにならない。
@@ -89,6 +89,9 @@ export async function runMonitorTick(state, io) {
   await io.save(state);
   // 通知は履歴に保存後に送信。失敗しても在庫変化を失わず、次の巡回で再試行する。
   const pending=state.events.filter(e=>e.delivery==='pending'&&e.nextAt<=now).reverse();
+  // 通知先が不調なら送信だけを休止する。店舗確認・ログ保存は継続する。
+  // 一つの不調で全商品の通知を連続失敗させない。
+  if(state.deliveryHealth?.retryAt>now)return;
   let delivered=0;
   for (const event of pending) {
     if(event.kind==='catalog') {
@@ -96,13 +99,14 @@ export async function runMonitorTick(state, io) {
       if(!state.webhook){event.delivery='screen';continue;}
       event.attempts++;event.nextAt=now+Math.min(300000,30000*2**event.attempts);
       await io.save(state);
-      try{await io.notify(state.webhook,event);event.delivery='sent';event.sentAt=now;}
-      catch(error){event.delivery=event.attempts>=5?'failed':'pending';event.error=deliveryError(error);}
-      await io.save(state);if(++delivered>=(state.automatic?.enabled?3:1))break;continue;
+      try{deliverySucceeded(state,event,await io.notify(state.webhook,event),now);}
+      catch(error){deliveryFailed(state,event,error,now);}
+      await io.save(state);if(event.error||++delivered>=(state.automatic?.enabled?3:1))break;continue;
     }
     const t=state.targets.find(t=>t.id===event.targetId);
     if (!t || !activeTarget(state,t) || now-event.at>600_000) {
       event.delivery='cancelled';
+      event.cancelledAt=now;event.cancelReason=!t||!activeTarget(state,t)?'inactive':'stale';
       // 待ち行列で古くなった未配送通知は、次の実取得で再判定する。
       if(t && activeTarget(state,t) && t.episodes[event.ruleId])t.episodes[event.ruleId].active=false;
       continue;
@@ -115,12 +119,28 @@ export async function runMonitorTick(state, io) {
     event.attempts++;
     event.nextAt=now+Math.min(300_000,30_000*2**event.attempts);
     await io.save(state);
-    try { await io.notify(state.webhook,event); event.delivery='sent'; event.sentAt=now; }
-    catch(error) { event.delivery=event.attempts>=5?'failed':'pending'; event.error=deliveryError(error); }
+    try {deliverySucceeded(state,event,await io.notify(state.webhook,event),now);}
+    catch(error) {deliveryFailed(state,event,error,now);}
     await io.save(state);
-    if(++delivered>=(state.automatic?.enabled?3:1))break; // 自動セットでも一巡3通知まで。
+    if(event.error||++delivered>=(state.automatic?.enabled?3:1))break; // 自動セットでも一巡3通知まで。
   }
   await io.save(state);
+}
+
+function deliverySucceeded(state,event,receipt,now) {
+  event.delivery='sent';event.sentAt=now;
+  if(receipt?.id)event.receiptId=receipt.id;
+  if(event.error)event.previousError=event.error;
+  delete event.error;
+  state.deliveryHealth={...state.deliveryHealth,lastAttemptAt:now,lastSuccessAt:now,consecutiveFailures:0,retryAt:0,error:''};
+}
+function deliveryFailed(state,event,error,now) {
+  const previous=state.deliveryHealth||{},failures=(previous.consecutiveFailures||0)+1;
+  const permanent=[401,403,404].includes(error?.status);
+  const delay=Math.max(Number(error?.retryAfterMs)||0,permanent?1800_000:Math.min(900_000,30_000*2**Math.min(failures,5)));
+  event.delivery=event.attempts>=5?'failed':'pending';event.error=deliveryError(error);event.lastFailureAt=now;
+  event.nextAt=now+delay;
+  state.deliveryHealth={...previous,lastAttemptAt:now,lastFailureAt:now,consecutiveFailures:failures,retryAt:event.nextAt,error:event.error};
 }
 
 function deliveryError(error) {
@@ -136,9 +156,10 @@ export async function sendDiscord(webhook, event) {
     : `【TCG在庫監視】${label}\n${event.title.slice(0,500)}\n${event.storeName||event.storeId}：${event.price.toLocaleString('ja-JP')}円（送料別）\n${event.url}\n確認時刻：${new Date(event.at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}\n通知番号：${event.id}`;
   // Workersではredirect:errorがTypeErrorになる。manualで転送を追わず3xxも失敗にする。
   const response=await fetch(url,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(8000),
-    headers:{'Content-Type':'application/json','User-Agent':'DiscordBot (https://github.com/nekoromme/tcg-cross-search, 0.10.3)'},body:JSON.stringify({
+    headers:{'Content-Type':'application/json','User-Agent':'DiscordBot (https://github.com/nekoromme/tcg-cross-search, 0.10.4)'},body:JSON.stringify({
       content:content.slice(0,1950),
       allowed_mentions:{parse:[]}})});
-  await response.body?.cancel();
-  if(!response.ok) throw new Error(`通知送信 HTTP ${response.status}`);
+  let payload;try{payload=await response.json();}catch{/* エラー本文は保存しない。 */}
+  if(!response.ok)throw Object.assign(new Error(`通知送信 HTTP ${response.status}`),{status:response.status,retryAfterMs:response.status===429?Math.max(Number(response.headers.get('retry-after'))||0,Number(payload?.retry_after)||0)*1000:0});
+  return {id:typeof payload?.id==='string'?payload.id:null};
 }

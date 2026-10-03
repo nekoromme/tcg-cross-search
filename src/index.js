@@ -8,10 +8,11 @@ import { matchesQuery, searchTerms, identifyProduct, comparePrice } from '../pub
 import { findNextSearchPage } from './pagination.js';
 import { routeMonitor } from './monitor-service.js';
 import { networkGuard } from './access-limits.js';
+import { BUILD_COMMIT } from './build-info.js';
 import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.10.3';
+const APP_VERSION = '0.10.4';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -30,7 +31,7 @@ export default {
     if (url.pathname === '/api/monitor') return routeMonitor(request, env);
 
     if (url.pathname === '/api/health') {
-      return jsonResponse({ ok: true, version: APP_VERSION, stores: STORES.length });
+      return jsonResponse({ ok: true, version: APP_VERSION, commit:BUILD_COMMIT, deployedAt:env.CF_VERSION_METADATA?.timestamp||null, stores: STORES.length });
     }
 
     if (url.pathname === '/api/stores') {

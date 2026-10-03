@@ -8,6 +8,7 @@ import { fetchHtml, handleStoreSearch } from './index.js';
 import { parseProductDetail } from './product-detail.js';
 import { identifyProduct } from '../public/catalog.js';
 import { productUrl } from './monitor-core.js';
+import { encodeMonitor, decodeMonitor, monitorFailure } from './monitor-storage.js';
 
 export const monitorResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function readCommand(request) {
@@ -29,7 +30,8 @@ export async function routeMonitor(request, env) {
   if(!env.MONITORS) return monitorResponse({error:'監視の保存先がまだ設定されていません'},503);
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
   const id=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
-  return env.MONITORS.get(env.MONITORS.idFromName(id)).fetch(request);
+  try {return await env.MONITORS.get(env.MONITORS.idFromName(id)).fetch(request);}
+  catch(error){const failure=monitorFailure(error,'durable-object');console.error(JSON.stringify({event:'monitor_failure',...failure}));return monitorResponse({error:'監視の保存先を利用できません。次回に再試行します',failure},503);}
 }
 
 export function makeMonitorIO(save, env = {}) {
@@ -132,18 +134,23 @@ export class InventoryMonitor {
     const count=await this.ctx.storage.get('chunks')||0;
     if(!count)return emptyMonitor();
     let serialized='';
-    for(let i=0;i<count;i++)serialized+=await this.ctx.storage.get(`chunk:${i}`);
-    return JSON.parse(serialized);
+    for(let i=0;i<count;i++){const chunk=await this.ctx.storage.get(`chunk:${i}`);if(typeof chunk!=='string')throw new Error('monitor snapshot chunk missing');serialized+=chunk;}
+    const {state,stats}=await decodeMonitor(serialized);
+    this.lastSerialized=JSON.stringify(state);this.storageStats={...stats,chunks:count};
+    return state;
   }
   async save(state) {
-    // 1つの保存項目の容量上限を超えないよう分割し、全体を同時に確定する。
-    const serialized=JSON.stringify(state), chunks=serialized.match(/[\s\S]{1,20000}/g)||[];
+    // 変更がない保存を省き、増えた履歴は圧縮して一括保存する。
+    const serialized=JSON.stringify(state);
+    if(serialized===this.lastSerialized&&this.storageStats?.format==='monitor-gzip-v1')return;
+    const {chunks,stats}=await encodeMonitor(serialized);
     await this.ctx.storage.transaction(async tx=>{
       const old=await tx.get('chunks')||0;
       for(let i=0;i<chunks.length;i++)await tx.put(`chunk:${i}`,chunks[i]);
       for(let i=chunks.length;i<old;i++)await tx.delete(`chunk:${i}`);
-      await tx.put('chunks',chunks.length);
+      if(old!==chunks.length)await tx.put('chunks',chunks.length);
     });
+    this.lastSerialized=serialized;this.storageStats={...stats,chunks:chunks.length};
   }
   async schedule(state) {
     if(state.enabled && (state.automatic?.enabled||state.jobs.some(j=>activeJob(state,j))||state.targets.some(t=>activeTarget(state,t))||state.events.some(e=>e.delivery==='pending')))
@@ -159,7 +166,9 @@ export class InventoryMonitor {
       if(!result.ok)console.info(JSON.stringify({event:'access_limit_wait',kind:command.kind||'manual',reason:result.error,retryAt:result.retryAt}));
       return monitorResponse(result);
     }
-    const state=await this.load();
+    let state;
+    try {state=await this.load();}
+    catch(error){const failure=monitorFailure(error,'load-state');console.error(JSON.stringify({event:'monitor_failure',...failure}));return monitorResponse({error:'監視履歴を読み出せません。既存履歴を保持して再試行します',failure},503);}
     try {
       if(request.method==='POST') {
         const command=await readCommand(request);
@@ -170,15 +179,17 @@ export class InventoryMonitor {
           catch{return monitorResponse({error:'通知テストに失敗。Discordの通知先を確認してください'},502);}
         }
       }
-      return monitorResponse(publicMonitor(state));
+      return monitorResponse({...publicMonitor(state),storage:this.storageStats});
     } catch(error) {return monitorResponse({error:error.message || '監視設定を保存できませんでした'},400);}
   });}
   alarm() {return this.serial(async()=>{
-    const state=await this.load();
+    let state;
+    try {state=await this.load();}
+    catch(error){console.error(JSON.stringify({event:'monitor_failure',...monitorFailure(error,'alarm-load')}));throw error;}
     // 致命的な中断が起きても次回を残す。通常の終了時に30秒後へ調整する。
     if(state.enabled&&state.rules.some(r=>r.enabled))await this.ctx.storage.setAlarm(Date.now()+60_000);
-    try {await refreshAutomaticCatalog(state);await runMonitorTick(state,makeMonitorIO(s=>this.save(s),this.env));}
-    catch {state.error='巡回処理が中断しました。次回に再試行します';await this.save(state);}
+    try {await refreshAutomaticCatalog(state);await runMonitorTick(state,makeMonitorIO(s=>this.save(s),this.env));state.lastCompletedAt=Date.now();state.error='';await this.save(state);}
+    catch(error) {state.error='巡回処理が中断しました。次回に再試行します';state.lastFailure=monitorFailure(error,'alarm-run');console.error(JSON.stringify({event:'monitor_failure',...state.lastFailure}));await this.save(state);}
     await this.schedule(state);
     console.info(JSON.stringify({event:'inventory_tick',rules:state.rules.length,targets:state.targets.length,
       failed:state.targets.filter(t=>t.error).length,pending:state.events.filter(e=>e.delivery==='pending').length}));

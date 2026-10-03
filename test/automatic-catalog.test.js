@@ -91,5 +91,5 @@ test('旧形式で失敗した新弾通知だけを一度再開し、送信済�
   s.events.push({...s.events[0],id:'already-sent',delivery:'sent'});
   let sent=0;const io={now:()=>now,save:async()=>{},storeHost:()=>'',notify:async()=>sent++};
   await runMonitorTick(s,io);await runMonitorTick(s,io);
-  assert.equal(sent,1);assert.equal(s.events[0].delivery,'sent');assert.equal(s.deliveryVersion,3);
+  assert.equal(sent,1);assert.equal(s.events[0].delivery,'sent');assert.equal(s.deliveryVersion,4);
 });
