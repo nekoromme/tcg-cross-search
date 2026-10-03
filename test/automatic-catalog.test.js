@@ -51,7 +51,7 @@ test('新弾通知も保存して配送し、2回目は再送しない',async()=
 });
 test('新弾通知の本文もDiscordの文字数以内でメンションを無効化',async t=>{
   const original=globalThis.fetch;let body;t.after(()=>globalThis.fetch=original);
-  globalThis.fetch=async(url,options)=>{body=JSON.parse(options.body);return new Response('{}');};
+  globalThis.fetch=async(url,options)=>{assert.match(options.headers['User-Agent'],/^DiscordBot \(/);body=JSON.parse(options.body);return new Response('{}');};
   await sendDiscord('https://discord.com/api/webhooks/123456789012345678/'+'x'.repeat(60),{kind:'catalog',title:'追加',id:'test',products:state().automatic.products});
   assert(body.content.length<=2000);assert.deepEqual(body.allowed_mentions,{parse:[]});
 });
@@ -82,4 +82,14 @@ test('過去版で登録された収納用品を停止し、誤通知も取り�
   s.events=[{id:'old-false-positive',targetId:t.id,ruleId:r.id,at:now,nextAt:now,delivery:'pending'}];s.jobs=[];
   await runMonitorTick(s,{now:()=>now,save:async()=>{},storeHost:()=>'',notify:async()=>assert.fail('用品を通知してはいけない')});
   assert.equal(t.enabled,false);assert.equal(s.events[0].delivery,'cancelled');
+});
+
+
+test('旧形式で失敗した新弾通知だけを一度再開し、送信済みを重複させない',async()=>{
+  const s=state();s.jobs=[];s.webhook='configured';
+  s.events[0].delivery='failed';s.events[0].attempts=5;s.events[0].error='Discord送信失敗';
+  s.events.push({...s.events[0],id:'already-sent',delivery:'sent'});
+  let sent=0;const io={now:()=>now,save:async()=>{},storeHost:()=>'',notify:async()=>sent++};
+  await runMonitorTick(s,io);await runMonitorTick(s,io);
+  assert.equal(sent,1);assert.equal(s.events[0].delivery,'sent');assert.equal(s.deliveryVersion,2);
 });

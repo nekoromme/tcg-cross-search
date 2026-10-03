@@ -14,6 +14,14 @@ export async function runMonitorTick(state, io) {
       for(const event of state.events)if(event.targetId===target.id&&event.delivery==='pending')event.delivery='cancelled';
     }
   }
+  // 旧送信形式で失敗していた通知を、この修正後に一度だけ再開する。
+  // 送信済みは触らず、古い在庫通知は下の鮮度確認で取り消して再取得する。
+  if(state.deliveryVersion!==2) {
+    for(const event of state.events)if(['pending','failed'].includes(event.delivery)&&event.error) {
+      event.delivery='pending';event.attempts=0;event.nextAt=now;
+    }
+    state.deliveryVersion=2;
+  }
   const usedHosts=new Set();
   // 発見検索の枠を先に確保する。30秒監視の店舗でも発見検索が永久に後回しにならない。
   const job=state.jobs.filter(j=>j.nextAt<=now && activeJob(state,j))
@@ -127,7 +135,7 @@ export async function sendDiscord(webhook, event) {
     ? `【TCG在庫監視】${event.title}\n${event.products.slice(0,6).map(p=>`${p.name}（${p.releaseDate}）`).join('\n')+(event.products.length>6?`\nほか${event.products.length-6}弾`:'')}\nBOX・在庫／予約受付を価格付きで通知。価格上限なし。\n通知番号：${event.id}`
     : `【TCG在庫監視】${label}\n${event.title.slice(0,500)}\n${event.storeName||event.storeId}：${event.price.toLocaleString('ja-JP')}円（送料別）\n${event.url}\n確認時刻：${new Date(event.at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}\n通知番号：${event.id}`;
   const response=await fetch(url,{method:'POST',redirect:'error',signal:AbortSignal.timeout(8000),
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    headers:{'Content-Type':'application/json','User-Agent':'DiscordBot (https://github.com/nekoromme/tcg-cross-search, 0.10.2)'},body:JSON.stringify({
       content:content.slice(0,1950),
       allowed_mentions:{parse:[]}})});
   await response.body?.cancel();
