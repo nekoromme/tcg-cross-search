@@ -39,7 +39,7 @@ test('取得失敗は前回の対象を維持し、失敗ログと再試行予�
 test('30周年の通常BOXだけ通知し、特別BOX・デッキ・海外版は除外する',()=>{
   const s=state(),r=s.rules.find(r=>r.automaticProductId==='pokemon-m6a');
   assert(matchesRule({title:'ポケモンカード 30th CELEBRATION BOX'},r.config));
-  for(const title of ['30th CELEBRATION FUTURISTIC BOX','30th CELEBRATION プレミアムデッキセット エーフィ BOX','30th CELEBRATION カードセット BOX','30th CELEBRATION English BOX'])assert(!matchesRule({title},r.config));
+  for(const title of ['ポケモンカードゲーム ロングカードボックス 30th CELEBRATION','ストレージBOX 30th CELEBRATION','30th CELEBRATION FUTURISTIC BOX','30th CELEBRATION プレミアムデッキセット エーフィ BOX','30th CELEBRATION カードセット BOX','30th CELEBRATION English BOX'])assert(!matchesRule({title},r.config));
   const t=addTarget(s,r,{title:'ポケモンカード 30th CELEBRATION BOX',url:'https://mediaworld.co.jp/products/stock-test',storeId:'mediaworld'},now);
   observe(s,t,{title:t.title,price:25000,stock:'in_stock',detailChecked:true},now);const n=s.events.length;
   observe(s,t,{title:t.title,price:25000,stock:'in_stock',detailChecked:true},now+60000);assert.equal(s.events.length,n);assert.equal(t.history[0].samples,2);
@@ -51,7 +51,7 @@ test('新弾通知も保存して配送し、2回目は再送しない',async()=
 });
 test('新弾通知の本文もDiscordの文字数以内でメンションを無効化',async t=>{
   const original=globalThis.fetch;let body;t.after(()=>globalThis.fetch=original);
-  globalThis.fetch=async(url,options)=>{body=JSON.parse(options.body);return new Response('{}');};
+  globalThis.fetch=async(url,options)=>{assert.match(options.headers['User-Agent'],/^DiscordBot \(/);body=JSON.parse(options.body);return new Response('{}');};
   await sendDiscord('https://discord.com/api/webhooks/123456789012345678/'+'x'.repeat(60),{kind:'catalog',title:'追加',id:'test',products:state().automatic.products});
   assert(body.content.length<=2000);assert.deepEqual(body.allowed_mentions,{parse:[]});
 });
@@ -72,4 +72,24 @@ test('30日保持する引退済みページが新弾の登録枠を塞がない
   const r=addRule(s,{query:'GD08',game:'gundam',priceLimit:'all',includeUnknown:true});r.automaticProductId='gundam-gd08';
   const target=addTarget(s,r,{storeId:'mediaworld',url:'https://mediaworld.co.jp/products/new-set',title:'ガンダム GD08 BOX'},now);
   assert(target);assert.equal(s.targets.length,501);assert.equal(s.targets[0].id,'old-0');
+});
+
+
+test('過去版で登録された収納用品を停止し、誤通知も取り消す',async()=>{
+  const s=state(),r=s.rules.find(r=>r.automaticProductId==='pokemon-m6a');
+  const t=addTarget(s,r,{storeId:'mediaworld',url:'https://mediaworld.co.jp/products/13921511002',title:'ロングカードボックス 30th CELEBRATION'},now);
+  t.lastGood={title:t.title,stock:'in_stock',price:710,detailChecked:true};
+  s.events=[{id:'old-false-positive',targetId:t.id,ruleId:r.id,at:now,nextAt:now,delivery:'pending'}];s.jobs=[];
+  await runMonitorTick(s,{now:()=>now,save:async()=>{},storeHost:()=>'',notify:async()=>assert.fail('用品を通知してはいけない')});
+  assert.equal(t.enabled,false);assert.equal(s.events[0].delivery,'cancelled');
+});
+
+
+test('旧形式で失敗した新弾通知だけを一度再開し、送信済みを重複させない',async()=>{
+  const s=state();s.jobs=[];s.webhook='configured';
+  s.events[0].delivery='failed';s.events[0].attempts=5;s.events[0].error='Discord送信失敗';
+  s.events.push({...s.events[0],id:'already-sent',delivery:'sent'});
+  let sent=0;const io={now:()=>now,save:async()=>{},storeHost:()=>'',notify:async()=>sent++};
+  await runMonitorTick(s,io);await runMonitorTick(s,io);
+  assert.equal(sent,1);assert.equal(s.events[0].delivery,'sent');assert.equal(s.deliveryVersion,2);
 });

@@ -1,11 +1,27 @@
 import { recordHistory } from './monitor-history.js';
 // スケジュールと保存先を外から渡す。移行しても在庫判定・通知履歴を変えない。
-import { LIMITS, effectiveInterval, discoveryInterval, activeJob, activeTarget, addTarget, matchesRule, observe, recordFailure, validateWebhook } from './monitor-core.js';
+import { LIMITS, effectiveInterval, discoveryInterval, activeJob, activeTarget, addTarget, matchesRule, eligibility, observe, recordFailure, validateWebhook } from './monitor-core.js';
 
 export async function runMonitorTick(state, io) {
   const now=io.now?.() ?? Date.now();
   state.lastTick=now;
   if (!state.enabled) return;
+  // 古い版で登録された用品も、取得済みの商品名で除外して履歴を残す。
+  for(const target of state.targets) {
+    const rules=state.rules.filter(r=>target.ruleIds.includes(r.id));
+    if(target.enabled!==false && target.lastGood && rules.length && rules.every(r=>r.automaticProductId) && !rules.some(r=>matchesRule(target.lastGood,r.config))) {
+      target.enabled=false;recordHistory(target,{kind:'pause',reason:'通常の日本語版BOXではないため対象外'},now);
+      for(const event of state.events)if(event.targetId===target.id&&event.delivery==='pending')event.delivery='cancelled';
+    }
+  }
+  // 旧送信形式で失敗していた通知を、この修正後に一度だけ再開する。
+  // 送信済みは触らず、古い在庫通知は下の鮮度確認で取り消して再取得する。
+  if(state.deliveryVersion!==2) {
+    for(const event of state.events)if(['pending','failed'].includes(event.delivery)&&event.error) {
+      event.delivery='pending';event.attempts=0;event.nextAt=now;
+    }
+    state.deliveryVersion=2;
+  }
   const usedHosts=new Set();
   // 発見検索の枠を先に確保する。30秒監視の店舗でも発見検索が永久に後回しにならない。
   const job=state.jobs.filter(j=>j.nextAt<=now && activeJob(state,j))
@@ -81,7 +97,7 @@ export async function runMonitorTick(state, io) {
       event.attempts++;event.nextAt=now+Math.min(300000,30000*2**event.attempts);
       await io.save(state);
       try{await io.notify(state.webhook,event);event.delivery='sent';event.sentAt=now;}
-      catch{event.delivery=event.attempts>=5?'failed':'pending';event.error='Discord送信失敗';}
+      catch(error){event.delivery=event.attempts>=5?'failed':'pending';event.error=deliveryError(error);}
       await io.save(state);if(++delivered>=(state.automatic?.enabled?3:1))break;continue;
     }
     const t=state.targets.find(t=>t.id===event.targetId);
@@ -91,6 +107,8 @@ export async function runMonitorTick(state, io) {
       if(t && activeTarget(state,t) && t.episodes[event.ruleId])t.episodes[event.ruleId].active=false;
       continue;
     }
+    const rule=state.rules.find(r=>r.id===event.ruleId);
+    if(!rule || eligibility(t.lastGood,rule.config)===false){event.delivery='cancelled';continue;}
     // 直近の取得が不明なら通知を保留。確認できた古い在庫を現在の在庫として送らない。
     if (t.error || !t.lastGoodAt || now-t.lastGoodAt>Math.max(120_000,state.intervalSeconds*2000)) continue;
     if (!state.webhook) { event.delivery='screen'; continue; }
@@ -98,13 +116,18 @@ export async function runMonitorTick(state, io) {
     event.nextAt=now+Math.min(300_000,30_000*2**event.attempts);
     await io.save(state);
     try { await io.notify(state.webhook,event); event.delivery='sent'; event.sentAt=now; }
-    catch { event.delivery=event.attempts>=5?'failed':'pending'; event.error='Discord送信失敗'; }
+    catch(error) { event.delivery=event.attempts>=5?'failed':'pending'; event.error=deliveryError(error); }
     await io.save(state);
     if(++delivered>=(state.automatic?.enabled?3:1))break; // 自動セットでも一巡3通知まで。
   }
   await io.save(state);
 }
 
+function deliveryError(error) {
+  // 秘密のURLやレスポンス本文を保存せず、HTTP番号と例外種別だけを残す。
+  const status=String(error?.message||'').match(/HTTP \d{3}/)?.[0];
+  return `Discord送信失敗（${status||String(error?.name||'Error').slice(0,40)}）`;
+}
 export async function sendDiscord(webhook, event) {
   const url=new URL(validateWebhook(webhook)); url.searchParams.set('wait','true');
   const label=event.stock==='preorder'?'予約受付':event.stock==='test'?'通知テスト':'在庫あり';
@@ -112,7 +135,7 @@ export async function sendDiscord(webhook, event) {
     ? `【TCG在庫監視】${event.title}\n${event.products.slice(0,6).map(p=>`${p.name}（${p.releaseDate}）`).join('\n')+(event.products.length>6?`\nほか${event.products.length-6}弾`:'')}\nBOX・在庫／予約受付を価格付きで通知。価格上限なし。\n通知番号：${event.id}`
     : `【TCG在庫監視】${label}\n${event.title.slice(0,500)}\n${event.storeName||event.storeId}：${event.price.toLocaleString('ja-JP')}円（送料別）\n${event.url}\n確認時刻：${new Date(event.at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}\n通知番号：${event.id}`;
   const response=await fetch(url,{method:'POST',redirect:'error',signal:AbortSignal.timeout(8000),
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    headers:{'Content-Type':'application/json','User-Agent':'DiscordBot (https://github.com/nekoromme/tcg-cross-search, 0.10.2)'},body:JSON.stringify({
       content:content.slice(0,1950),
       allowed_mentions:{parse:[]}})});
   await response.body?.cancel();

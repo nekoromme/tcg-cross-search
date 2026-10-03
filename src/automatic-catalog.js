@@ -83,7 +83,7 @@ export async function refreshAutomaticCatalog(state,now=Date.now(),fetcher=fetch
   if(!state.automatic?.enabled || state.automatic.nextSync>now)return;
   let stage='fetch';
   try {
-    const response=await fetcher(RELEASE_FEED,{redirect:'error',signal:AbortSignal.timeout(15000)});
+    const response=await fetcher(RELEASE_FEED,{redirect:'error',headers:{'User-Agent':'PersonalTCGCrossSearch/0.10.2 (+https://github.com/nekoromme/tcg-cross-search)'},signal:AbortSignal.timeout(15000)});
     stage=`http-${response.status}`;
     if(!response.ok)throw new Error('発売情報を取得できません');
     stage='read-body';
