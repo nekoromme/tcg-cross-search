@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {emptyMonitor,addTarget,observe,publicMonitor,matchesRule,activeJob} from '../src/monitor-core.js';
 import {syncAutomaticCatalog,refreshAutomaticCatalog,catalogProducts,selectAutomaticProducts} from '../src/automatic-catalog.js';
+import {monitorCommand} from '../src/monitor-service.js';
 import {runMonitorTick,sendDiscord} from '../src/monitor-engine.js';
 const feed=JSON.parse(readFileSync(new URL('./fixtures/official-stock-releases-2026-10-03.json',import.meta.url)));
 const now=Date.parse('2026-10-03T13:00:00Z');
@@ -53,4 +54,12 @@ test('新弾通知の本文もDiscordの文字数以内でメンションを無�
   globalThis.fetch=async(url,options)=>{body=JSON.parse(options.body);return new Response('{}');};
   await sendDiscord('https://discord.com/api/webhooks/123456789012345678/'+'x'.repeat(60),{kind:'catalog',title:'追加',id:'test',products:state().automatic.products});
   assert(body.content.length<=2000);assert.deepEqual(body.allowed_mentions,{parse:[]});
+});
+
+
+test('公式商品の小さい一覧を認証済み操作で取り込み、初回失敗後も復旧する',async()=>{
+  const s=emptyMonitor();s.automatic={enabled:true,error:'前回失敗',nextSync:1};
+  await monitorCommand(s,{action:'automatic',releases:feed.seen_releases});
+  assert.equal(s.automatic.error,'');assert.equal(s.automatic.products.length,38);
+  assert(s.rules.some(r=>r.config.query==='EB-04'));
 });
