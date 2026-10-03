@@ -39,7 +39,7 @@ test('取得失敗は前回の対象を維持し、失敗ログと再試行予�
 test('30周年の通常BOXだけ通知し、特別BOX・デッキ・海外版は除外する',()=>{
   const s=state(),r=s.rules.find(r=>r.automaticProductId==='pokemon-m6a');
   assert(matchesRule({title:'ポケモンカード 30th CELEBRATION BOX'},r.config));
-  for(const title of ['30th CELEBRATION FUTURISTIC BOX','30th CELEBRATION プレミアムデッキセット エーフィ BOX','30th CELEBRATION カードセット BOX','30th CELEBRATION English BOX'])assert(!matchesRule({title},r.config));
+  for(const title of ['ポケモンカードゲーム ロングカードボックス 30th CELEBRATION','ストレージBOX 30th CELEBRATION','30th CELEBRATION FUTURISTIC BOX','30th CELEBRATION プレミアムデッキセット エーフィ BOX','30th CELEBRATION カードセット BOX','30th CELEBRATION English BOX'])assert(!matchesRule({title},r.config));
   const t=addTarget(s,r,{title:'ポケモンカード 30th CELEBRATION BOX',url:'https://mediaworld.co.jp/products/stock-test',storeId:'mediaworld'},now);
   observe(s,t,{title:t.title,price:25000,stock:'in_stock',detailChecked:true},now);const n=s.events.length;
   observe(s,t,{title:t.title,price:25000,stock:'in_stock',detailChecked:true},now+60000);assert.equal(s.events.length,n);assert.equal(t.history[0].samples,2);
@@ -72,4 +72,14 @@ test('30日保持する引退済みページが新弾の登録枠を塞がない
   const r=addRule(s,{query:'GD08',game:'gundam',priceLimit:'all',includeUnknown:true});r.automaticProductId='gundam-gd08';
   const target=addTarget(s,r,{storeId:'mediaworld',url:'https://mediaworld.co.jp/products/new-set',title:'ガンダム GD08 BOX'},now);
   assert(target);assert.equal(s.targets.length,501);assert.equal(s.targets[0].id,'old-0');
+});
+
+
+test('過去版で登録された収納用品を停止し、誤通知も取り消す',async()=>{
+  const s=state(),r=s.rules.find(r=>r.automaticProductId==='pokemon-m6a');
+  const t=addTarget(s,r,{storeId:'mediaworld',url:'https://mediaworld.co.jp/products/13921511002',title:'ロングカードボックス 30th CELEBRATION'},now);
+  t.lastGood={title:t.title,stock:'in_stock',price:710,detailChecked:true};
+  s.events=[{id:'old-false-positive',targetId:t.id,ruleId:r.id,at:now,nextAt:now,delivery:'pending'}];s.jobs=[];
+  await runMonitorTick(s,{now:()=>now,save:async()=>{},storeHost:()=>'',notify:async()=>assert.fail('用品を通知してはいけない')});
+  assert.equal(t.enabled,false);assert.equal(s.events[0].delivery,'cancelled');
 });

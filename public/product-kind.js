@@ -1,7 +1,7 @@
 // 画面と検索処理で同じ判定を使う。価格だけでBOXと決めつけない。
 export function isSpecialSet(title) {
   // 通常BOXと同じ弾名を含んでいても、デッキや付属品とのセットは別商品。
-  return /デッキビルド\s*(?:BOX|ボックス)|トレーナー(?:ズ)?\s*(?:BOX|ボックス)|ポケモンセンターセット|ポケセンセット|アタッシュケース|デラックス|プレミアムセット|ギフトセット|特別セット|スターター|スタートデッキ|構築済|デッキボックス/i.test(String(title || '').normalize('NFKC'));
+  return /デッキビルド\s*(?:BOX|ボックス)|トレーナー(?:ズ)?\s*(?:BOX|ボックス)|ポケモンセンターセット|ポケセンセット|アタッシュケース|デラックス|プレミアムセット|ギフトセット|特別セット|スターター|スタートデッキ|構築済|デッキボックス|ロングカードボックス|ストレージ(?:ボックス|BOX)|FUTURISTIC|プレミアムデッキ/i.test(String(title || '').normalize('NFKC'));
 }
 export function productKind(title) {
   const text = String(title || '').normalize('NFKC');
