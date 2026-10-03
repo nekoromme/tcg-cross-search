@@ -116,7 +116,7 @@ test('通知内容のメンションを無効化、秘密の転送を許可し�
   const original=globalThis.fetch;let captured;
   globalThis.fetch=async(url,options)=>{captured={url:String(url),options};return new Response('{}');};t.after(()=>globalThis.fetch=original);
   await sendDiscord(webhook,{id:'test',at:1000000,title:'@everyone GD04',price:5808,storeId:'mediaworld',stock:'in_stock',url:seed.url});
-  assert(captured.url.endsWith('?wait=true'));assert.equal(captured.options.redirect,'error');assert.deepEqual(JSON.parse(captured.options.body).allowed_mentions,{parse:[]});
+  assert(captured.url.endsWith('?wait=true'));assert.equal(captured.options.redirect,'manual');assert.deepEqual(JSON.parse(captured.options.body).allowed_mentions,{parse:[]});
 });
 test('実行アダプターでも税抜・会員価格の比較不可を保持する',async(t)=>{
   const original=globalThis.fetch;
