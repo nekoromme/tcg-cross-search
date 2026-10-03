@@ -1,6 +1,7 @@
+import { refreshAutomaticCatalog } from './automatic-catalog.js';
 import { normalizeUrlKey } from './search-common.js';
 import { accessDecision, networkGuard } from './access-limits.js';
-import { emptyMonitor, activeTarget, activeJob, syncActivity, addRule, removeRule, publicMonitor, validateWebhook } from './monitor-core.js';
+import { emptyMonitor, addTarget, matchesRule, activeTarget, activeJob, syncActivity, addRule, removeRule, publicMonitor, validateWebhook } from './monitor-core.js';
 import { runMonitorTick, sendDiscord } from './monitor-engine.js';
 import { STORE_MAP } from './stores.js';
 import { fetchHtml, handleStoreSearch } from './index.js';
@@ -43,7 +44,7 @@ export function makeMonitorIO(save, env = {}) {
       if(page.truncated) return {error:'商品ページの容量上限で未確認'};
       const parsed=parseProductDetail(page.text);
       const product=identifyProduct(parsed.title);
-      if(parsed.stock==='in_stock'&&product?.releaseDate>new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'})) parsed.stock='preorder';
+      if(parsed.stock==='in_stock'&&(target.releaseDate||product?.releaseDate)>new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'})) parsed.stock='preorder';
       return {row:{title:parsed.title||'',price:parsed.price,stock:parsed.stock,priceState:parsed.priceState||'',
         detailChecked:Boolean(parsed.title),priceComparable:parsed.priceComparable,priceIssue:parsed.priceIssue},status:200};
     },
@@ -60,6 +61,22 @@ export async function monitorCommand(state, body, {minInterval=30}={}) {
   const before=new Map(state.targets.map(t=>[t.id,activeTarget(state,t)]));
   const now=Date.now();
   switch(body.action) {
+    case 'automatic': {
+      // 同期は既存領域だけを操作する。新しい端末の監視を無断で移動しない。
+      state.automatic ||= {enabled:true,nextSync:0,log:[]};
+      if(body.enabled!==undefined)state.automatic.enabled=body.enabled===true;
+      state.automatic.nextSync=0;
+      await refreshAutomaticCatalog(state);
+      break;
+    }
+    case 'automatic-seeds': {
+      if(!state.automatic?.enabled)throw new Error('自動対象が未設定です');
+      for(const row of (Array.isArray(body.seeds)?body.seeds:[]).slice(0,100))
+        for(const rule of state.rules.filter(r=>r.automaticProductId&&!r.autoRetired))
+          if(rule.config.storeIds.includes(row.storeId)&&matchesRule(row,rule.config))
+            try{addTarget(state,rule,row,now);}catch{/* 許可店以外のリンクは登録しない。 */}
+      break;
+    }
     case 'add': addRule(state,body.rule,Array.isArray(body.seeds)?body.seeds:[]); break;
     case 'delete': removeRule(state,body.id); break;
     case 'toggle': {
@@ -128,7 +145,7 @@ export class InventoryMonitor {
     });
   }
   async schedule(state) {
-    if(state.enabled && (state.jobs.some(j=>activeJob(state,j))||state.targets.some(t=>activeTarget(state,t))||state.events.some(e=>e.delivery==='pending')))
+    if(state.enabled && (state.automatic?.enabled||state.jobs.some(j=>activeJob(state,j))||state.targets.some(t=>activeTarget(state,t))||state.events.some(e=>e.delivery==='pending')))
       await this.ctx.storage.setAlarm(Date.now()+30_000);
     else await this.ctx.storage.deleteAlarm();
   }
@@ -159,7 +176,7 @@ export class InventoryMonitor {
     const state=await this.load();
     // 致命的な中断が起きても次回を残す。通常の終了時に30秒後へ調整する。
     if(state.enabled&&state.rules.some(r=>r.enabled))await this.ctx.storage.setAlarm(Date.now()+60_000);
-    try {await runMonitorTick(state,makeMonitorIO(s=>this.save(s),this.env));}
+    try {await refreshAutomaticCatalog(state);await runMonitorTick(state,makeMonitorIO(s=>this.save(s),this.env));}
     catch {state.error='巡回処理が中断しました。次回に再試行します';await this.save(state);}
     await this.schedule(state);
     console.info(JSON.stringify({event:'inventory_tick',rules:state.rules.length,targets:state.targets.length,
