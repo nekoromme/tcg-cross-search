@@ -3,6 +3,8 @@
   "name": "tcg-cross-search",
   "main": "./src/index.js",
   "compatibility_date": "2026-09-07",
+  "build": { "command": "node scripts/prepare-worker-build.mjs" },
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "durable_objects": { "bindings": [{ "name": "MONITORS", "class_name": "InventoryMonitor" }] },
   "migrations": [{ "tag": "inventory-v1", "new_sqlite_classes": ["InventoryMonitor"] }],
   "cache": {
