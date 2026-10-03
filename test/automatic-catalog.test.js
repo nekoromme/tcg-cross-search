@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {emptyMonitor,addTarget,observe,publicMonitor,matchesRule,activeJob} from '../src/monitor-core.js';
+import {emptyMonitor,addRule,addTarget,observe,publicMonitor,matchesRule,activeJob} from '../src/monitor-core.js';
 import {syncAutomaticCatalog,refreshAutomaticCatalog,catalogProducts,selectAutomaticProducts} from '../src/automatic-catalog.js';
 import {monitorCommand} from '../src/monitor-service.js';
 import {runMonitorTick,sendDiscord} from '../src/monitor-engine.js';
@@ -62,4 +62,14 @@ test('公式商品の小さい一覧を認証済み操作で取り込み、初�
   await monitorCommand(s,{action:'automatic',releases:feed.seen_releases});
   assert.equal(s.automatic.error,'');assert.equal(s.automatic.products.length,38);
   assert(s.rules.some(r=>r.config.query==='EB-04'));
+});
+
+
+test('30日保持する引退済みページが新弾の登録枠を塞がない',()=>{
+  const s=state();
+  const old=s.rules.find(r=>r.config.query==='GD02');old.autoRetired=true;
+  for(let n=0;n<500;n++)s.targets.push({id:`old-${n}`,key:`old-${n}`,ruleIds:[old.id],episodes:{}});
+  const r=addRule(s,{query:'GD08',game:'gundam',priceLimit:'all',includeUnknown:true});r.automaticProductId='gundam-gd08';
+  const target=addTarget(s,r,{storeId:'mediaworld',url:'https://mediaworld.co.jp/products/new-set',title:'ガンダム GD08 BOX'},now);
+  assert(target);assert.equal(s.targets.length,501);assert.equal(s.targets[0].id,'old-0');
 });

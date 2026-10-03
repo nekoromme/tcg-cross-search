@@ -77,7 +77,7 @@ export function addRule(state, input, seeds = [], now = Date.now()) {
   const existing = state.rules.find(r=>JSON.stringify(r.config) === fingerprint);
   if (existing) return existing;
   const limits=monitorLimits(state);
-  if(state.targets.length>=limits.targets)throw new Error(`商品ページは最大${limits.targets}件です。不要な監視条件を削除してください`);
+  if(!state.automatic?.enabled && state.targets.length>=limits.targets)throw new Error(`商品ページは最大${limits.targets}件です。不要な監視条件を削除してください`);
   if (state.rules.filter(r=>!r.autoRetired).length >= limits.rules) throw new Error(`監視条件は最大${limits.rules}件です`);
   const rule = { id: crypto.randomUUID(), config: valid, enabled: true, createdAt: now };
   state.rules.push(rule);
@@ -92,7 +92,8 @@ export function addTarget(state, rule, row, now) {
     const limits=monitorLimits(state);
     // 一つの弾だけで全枠を埋めない。各弾の未確認店も検索ログに残す。
     if(rule.automaticProductId && state.targets.filter(t=>t.ruleIds.includes(rule.id)).length>=12)return null;
-    if (state.targets.length >= limits.targets) { state.error = `商品ページが${limits.targets}件の上限。追加候補は検索ログを確認してください`; return null; }
+    const counted=state.automatic?.enabled?state.targets.filter(t=>state.rules.some(r=>ruleEnabled(r)&&t.ruleIds.includes(r.id))).length:state.targets.length;
+    if (counted >= limits.targets) { state.error = `商品ページが${limits.targets}件の上限。追加候補は検索ログを確認してください`; return null; }
     target = { id: crypto.randomUUID(), key, storeId: row.storeId, url, title: String(row.title).slice(0,600), ruleIds: [], episodes: {}, nextAt: now, failures: 0, lastChecked: null, lastGood: null, error: '' };
     state.targets.push(target);
   }
