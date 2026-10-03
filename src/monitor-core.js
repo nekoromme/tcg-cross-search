@@ -147,7 +147,11 @@ export function effectiveInterval(state,target) {
   if(state.automatic?.enabled && target && pinnedCount) {
     const important=pinned(target), count=important?pinnedCount:Math.max(1,targets.length-pinnedCount);
     const budget=important?6000:2000;
-    return Math.max(state.intervalSeconds,Math.ceil(count*86400/budget),Math.ceil(hostCount*86400/1200));
+    const sameHost=targets.filter(t=>new URL(t.url).hostname.replace(/^www\./,'')===host);
+    const priorityOnHost=sameHost.filter(pinned).length;
+    const hostClassCount=important?priorityOnHost:Math.max(1,sameHost.length-priorityOnHost);
+    const hostBudget=priorityOnHost?(important?900:300):1200;
+    return Math.max(state.intervalSeconds,Math.ceil(count*86400/budget),Math.ceil(hostClassCount*86400/hostBudget));
   }
   return Math.max(state.intervalSeconds,Math.ceil(targets.length*86400/8000),Math.ceil(hostCount*86400/1200));
 }

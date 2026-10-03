@@ -11,7 +11,9 @@ const METHODS = new Set(['pokemon_official_product_card','pokemon_official_produ
 const PINNED = ['gundam-gd01','gundam-gd05','pokemon-m6a'];
 export function catalogProducts(feed) {
   if (!feed?.seen_releases || typeof feed.seen_releases !== 'object') throw new Error('発売情報の形式を確認できません');
-  const products=new Map(PRODUCTS.map(p=>[p.id,{...p,officialUrl:p.sources[0]?.url}]));
+  // BOX定価が未確認の商品は価格台帳には入れず、発売日と検索条件だけを補完する。
+  const supplement={id:'onepiece-eb-04',game:'onepiece',code:'EB-04',name:'EGGHEAD CRISIS',aliases:['EGGHEAD CRISIS'],searchTerm:'EB-04',releaseDate:'2026-01-31',boxPrice:null,sources:[{url:'https://www.onepiece-cardgame.com/products/?page=1&subcategory=boosters'}]};
+  const products=new Map([...PRODUCTS,supplement].map(p=>[p.id,{...p,officialUrl:p.sources[0]?.url}]));
   for(const r of Object.values(feed.seen_releases)) {
     const game=GAME_IDS[r.game_id];
     let url;try{url=new URL(r.official_url);}catch{continue;}
