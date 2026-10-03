@@ -1,4 +1,4 @@
-import { refreshAutomaticCatalog } from './automatic-catalog.js';
+import { refreshAutomaticCatalog, syncAutomaticCatalog } from './automatic-catalog.js';
 import { normalizeUrlKey } from './search-common.js';
 import { accessDecision, networkGuard } from './access-limits.js';
 import { emptyMonitor, addTarget, matchesRule, activeTarget, activeJob, syncActivity, addRule, removeRule, publicMonitor, validateWebhook } from './monitor-core.js';
@@ -66,7 +66,8 @@ export async function monitorCommand(state, body, {minInterval=30}={}) {
       state.automatic ||= {enabled:true,nextSync:0,log:[]};
       if(body.enabled!==undefined)state.automatic.enabled=body.enabled===true;
       state.automatic.nextSync=0;
-      await refreshAutomaticCatalog(state);
+      if(state.automatic.enabled && body.releases)syncAutomaticCatalog(state,{seen_releases:body.releases});
+      else await refreshAutomaticCatalog(state);
       break;
     }
     case 'automatic-seeds': {

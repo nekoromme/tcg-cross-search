@@ -3,7 +3,7 @@
 import { PRODUCTS, identifyProduct, normalized } from '../public/catalog.js';
 import { addRule } from './monitor-core.js';
 
-export const RELEASE_FEED = 'https://raw.githubusercontent.com/nekoromme/tcg-box-monitor-public/refs/heads/monitor-state/monitor_state.json';
+export const RELEASE_FEED = 'https://raw.githubusercontent.com/nekoromme/tcg-box-monitor-public/refs/heads/monitor-state/inventory_releases.json';
 export const AUTO_LIMITS = {rules:80, targets:500, events:500, pagesPerRule:12};
 const GAME_IDS = {pokemon_card:'pokemon',one_piece_card:'onepiece',gundam_card:'gundam',dragon_ball_fusion_world:'dragonball',lorcana:'lorcana',yu_gi_oh:'yugioh'};
 const OFFICIAL_HOSTS = {pokemon:['www.pokemon-card.com','www.30th.pokemon-card.com'],onepiece:['www.onepiece-cardgame.com'],gundam:['www.gundam-gcg.com'],dragonball:['www.dbs-cardgame.com'],lorcana:['www.takaratomy.co.jp'],yugioh:['www.yugioh-card.com']};
@@ -81,12 +81,17 @@ export function syncAutomaticCatalog(state,feed,now=Date.now()) {
 
 export async function refreshAutomaticCatalog(state,now=Date.now(),fetcher=fetch) {
   if(!state.automatic?.enabled || state.automatic.nextSync>now)return;
+  let stage='fetch';
   try {
     const response=await fetcher(RELEASE_FEED,{redirect:'error',signal:AbortSignal.timeout(15000)});
+    stage=`http-${response.status}`;
     if(!response.ok)throw new Error('発売情報を取得できません');
+    stage='read-body';
     const text=await response.text();if(text.length>12_000_000)throw new Error('発売情報のサイズ上限');
+    stage='parse-catalog';
     syncAutomaticCatalog(state,JSON.parse(text),now);
-  } catch {
+  } catch (error) {
+    state.automatic.lastFailure={at:now,stage,name:error?.name||'Error',reason:String(error?.message||'').slice(0,180)};
     state.automatic.error='公式発売情報の更新失敗。前回の監視対象を維持し30分後に再試行';
     state.automatic.nextSync=now+1800000;
     state.automatic.log=[...(state.automatic.log||[]),{at:now,kind:'error',message:state.automatic.error}].slice(-100);
