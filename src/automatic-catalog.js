@@ -2,6 +2,7 @@
 // ショップの商品名やSNSの噂から、存在しない新弾を作らない。
 import { PRODUCTS, identifyProduct, normalized } from '../public/catalog.js';
 import { addRule } from './monitor-core.js';
+import { applyAutomaticPricing } from './monitor-pricing.js';
 
 export const RELEASE_FEED = 'https://raw.githubusercontent.com/nekoromme/tcg-box-monitor-public/refs/heads/monitor-state/inventory_releases.json';
 export const AUTO_LIMITS = {rules:80, targets:500, events:500, pagesPerRule:12};
@@ -65,13 +66,14 @@ export function syncAutomaticCatalog(state,feed,now=Date.now()) {
   for(const p of chosen) {
     let rule=state.rules.find(r=>r.automaticProductId===p.id);
     if(!rule) {
-      rule=addRule(state,{query:p.searchTerm||p.name,game:p.game,priceLimit:'all',includeUnknown:true,includePreorders:true},[],now);
+      rule=addRule(state,{query:p.searchTerm||p.name,game:p.game,priceLimit:'105',includeUnknown:false,includePreorders:true},[],now);
       rule.automaticProductId=p.id;added.push(p);
     }
     // 再同期しても手動停止・通知済み状態・取得ログは維持する。
-    rule.config.automaticProduct={id:p.id,name:p.name,code:p.code,aliases:p.aliases||[p.name],releaseDate:p.releaseDate,officialUrl:p.officialUrl,pinned:!!p.pinned};
+    rule.config.automaticProduct={id:p.id,name:p.name,code:p.code,aliases:p.aliases||[p.name],releaseDate:p.releaseDate,officialUrl:p.officialUrl,boxPrice:p.boxPrice||null,pinned:!!p.pinned};
   }
   auto.products=chosen.map(p=>({id:p.id,game:p.game,name:p.name,query:p.searchTerm||p.name,releaseDate:p.releaseDate,pinned:!!p.pinned,officialUrl:p.officialUrl}));
+  applyAutomaticPricing(state,now);
   auto.lastSync=now;auto.nextSync=now+2*3600000;auto.error='';
   auto.log=[...(auto.log||[]),{at:now,kind:'catalog',count:chosen.length,added:added.map(p=>p.name)}].slice(-100);
   // 初期登録も1件にまとめる。新弾発見を在庫発見とは別の通知として残す。

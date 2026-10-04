@@ -2,7 +2,8 @@ import { recordHistory, pruneHistory, HISTORY_LIMITS } from './monitor-history.j
 // 実行場所に依存しない監視のルール。Cloudflareでも移行先のNode.jsでも共有する。
 import { STORE_MAP, STORES } from './stores.js';
 import { isLikelyProductUrl, isJunkTitle, looksLikeSingleCard, normalizeUrlKey, sanitizeQuery } from './search-common.js';
-import { matchesQuery, comparePrice, identifyProduct, explicitGame } from '../public/catalog.js';
+import { matchesQuery, identifyProduct, explicitGame } from '../public/catalog.js';
+import {priceAssessment} from './monitor-pricing.js';
 import { productKind, isSpecialSet } from '../public/product-kind.js';
 
 export const LIMITS = { rules: 10, targets: 50, events: 80, intervalSeconds: 60, discoveryMs: 30 * 60_000 };
@@ -19,7 +20,7 @@ export function validateRule(input) {
   const unit = input.unit || 'box';
   if (!['box', 'sealed'].includes(unit)) throw new Error('監視はBOXまたはBOX＋カートンに対応しています');
   const priceLimit = String(input.priceLimit || '105');
-  if (!['100', '105', '110', 'all'].includes(priceLimit)) throw new Error('定価条件が不正です');
+  if (priceLimit!=='all'&&(!Number.isInteger(Number(priceLimit))||Number(priceLimit)<50||Number(priceLimit)>1000)) throw new Error('定価条件が不正です');
   const maxPrice = input.maxPrice == null || input.maxPrice === '' ? null : Number(input.maxPrice);
   if (maxPrice !== null && (!Number.isInteger(maxPrice) || maxPrice < 1 || maxPrice > 99999999)) throw new Error('上限価格が不正です');
   const allowed = STORES.filter(s => !game || !s.games || s.games.includes(game)).map(s=>s.id);
@@ -66,11 +67,7 @@ export function eligibility(row, rule) {
   if (!['in_stock','preorder'].includes(row.stock)) return null;
   if (row.stock === 'preorder' && !rule.includePreorders) return false;
   if (!(row.price > 0) || row.priceState === 'unavailable' || row.priceComparable === false) return null;
-  if (rule.maxPrice && row.price > rule.maxPrice) return false;
-  const comp = comparePrice(row);
-  if (comp.status !== 'known' && !rule.includeUnknown) return false;
-  if (comp.status === 'known' && rule.priceLimit !== 'all' && row.price > comp.referencePrice * Number(rule.priceLimit) / 100) return false;
-  return true;
+  return priceAssessment(row,rule).status==='within_limit';
 }
 export function addRule(state, input, seeds = [], now = Date.now()) {
   const valid = validateRule(input), fingerprint = JSON.stringify(valid);
@@ -166,10 +163,12 @@ export function observe(state, target, row, now) {
   target.latest=row;
   const known = row.detailChecked && row.title && ['in_stock','out_of_stock','preorder'].includes(row.stock) && ((row.price > 0 && row.priceComparable!==false) || row.stock==='out_of_stock');
   if (!known) { recordFailure(target, '商品名・在庫・価格を確認できず', now, state.intervalSeconds); return; }
-  recordHistory(target,{kind:'observation',stock:row.stock,price:row.price,comparable:row.priceComparable},now);
+  const rules=state.rules.filter(r=>ruleEnabled(r) && target.ruleIds.includes(r.id));
+  target.priceDecisions=Object.fromEntries(rules.map(r=>[r.id,{...priceAssessment(row,r.config),at:now}]));
+  recordHistory(target,{kind:'observation',stock:row.stock,price:row.price,comparable:row.priceComparable,priceDecision:[...new Set(Object.values(target.priceDecisions).map(d=>d.reason))].join('／')},now);
   target.lastGood=row; target.lastGoodAt=now; target.title=row.title.slice(0,600); target.failures=0; target.error='';
   target.nextAt=now+effectiveInterval(state,target)*1000;
-  for (const rule of state.rules.filter(r=>ruleEnabled(r) && target.ruleIds.includes(r.id))) {
+  for (const rule of rules) {
     const value=eligibility(row,rule.config);
     const episode=target.episodes[rule.id] ||= { active:false, negatives:0, lastEvent:0 };
     if (value===null) continue;
@@ -183,7 +182,7 @@ export function observe(state, target, row, now) {
     episode.negatives=0;
     if (!episode.active && (!episode.lastEvent || now-episode.lastEvent>=300_000)) {
       const event={ id:crypto.randomUUID(), targetId:target.id, ruleId:rule.id, at:now, title:target.title, storeId:target.storeId, url:target.url,
-        price:row.price, stock:row.stock, delivery:state.webhook?'pending':'screen', attempts:0, nextAt:now };
+        price:row.price, stock:row.stock, priceCondition:priceAssessment(row,rule.config), delivery:state.webhook?'pending':'screen', attempts:0, nextAt:now };
       // 同じ商品が複数条件に当たっても、同じ巡回の通知は1件にまとめる。
       if(!state.events.some(e=>e.targetId===target.id&&e.at===now))state.events.unshift(event);
       state.events=state.events.slice(0,monitorLimits(state).events);
