@@ -12,7 +12,7 @@ import { BUILD_COMMIT } from './build-info.js';
 import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.11.0';
+const APP_VERSION = '0.12.0';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -51,7 +51,7 @@ export default {
   },
 };
 
-export async function handleStoreSearch(request, guard = null, {skipDetail=()=>false} = {}) {
+export async function handleStoreSearch(request, guard = null, {skipDetail=()=>false,listingOnly=false} = {}) {
   const startedAt = Date.now();
   const url = new URL(request.url);
   const storeId = url.searchParams.get('store') || '';
@@ -74,7 +74,7 @@ export async function handleStoreSearch(request, guard = null, {skipDetail=()=>f
   const manualSearchUrl = buildStoreSearchUrl(store, terms[0]);
   const pageLimit = resumeUrl ? 1 : url.searchParams.get('depth') === 'wide' ? 3 : 1;
   // 検索＋詳細を合わせて25秒・最大12通信で打ち切る。負荷を無制限に増やさない。
-  const budget = { deadline: Date.now() + 25_000, requests: 0, guard };
+  const budget = { deadline: Date.now() + 25_000, requests: 0, maxRequests:listingOnly?4:12, guard };
   const baseResult = {
     version: APP_VERSION,
     query,
@@ -216,14 +216,14 @@ export async function handleStoreSearch(request, guard = null, {skipDetail=()=>f
       const candidates = [...candidatesByUrl.values()];
       // BOXを先に確保してから詳細確認。カートンが候補枠を独占しない。
       candidates.sort((a, b) => Number(b.kind === 'box') - Number(a.kind === 'box') || b.score - a.score);
-      if(!saved && candidates.length>detailOffset+4) {
+      if(!listingOnly && !saved && candidates.length>detailOffset+4) {
         snapshotId=await saveSearchSnapshot(url.origin,snapshotScope,{candidates,coverage:structuredClone(baseResult.coverage)});
       }
-      const selected = candidates.slice(detailOffset, detailOffset + 8);
-      baseResult.candidateLimit = 8;
+      const selected = listingOnly?candidates:candidates.slice(detailOffset, detailOffset + 8);
+      baseResult.candidateLimit = listingOnly?100:8;
       baseResult.coverage.candidateCount = candidates.length;
       if (!detailOffset) for (const next of nextPages) if (!visited.has(next)) baseResult.continuations.push({ start: next, offset: 0 });
-      if (candidates.length > detailOffset + 4) baseResult.continuations.unshift({ start: resumeUrl || '', offset: detailOffset + 4, ...(snapshotId?{snapshot:snapshotId}:{}) });
+      if (!listingOnly && candidates.length > detailOffset + 4) baseResult.continuations.unshift({ start: resumeUrl || '', offset: detailOffset + 4, ...(snapshotId?{snapshot:snapshotId}:{}) });
       if (baseResult.continuations.length) baseResult.coverage.pending.push('残りのページ・商品詳細を追加確認できます');
 
       if (!candidates.length) {
@@ -234,7 +234,7 @@ export async function handleStoreSearch(request, guard = null, {skipDetail=()=>f
             // 自動監視でOFFにしたページは、掲載探しの詳細取得からも除外する。
             if(skipDetail(candidate))return null;
             // 一度に外へ接続しすぎないよう、詳細は最大4件。残りは要確認欄へ。
-            if (index >= 4) return { ...candidate, reviewReason: '商品詳細は未確認' };
+            if (listingOnly || index >= 4) return { ...candidate, reviewReason: '商品詳細は未確認' };
             try {
               const detailResponse = await fetchHtml(candidate.url, DETAIL_HTML_MAX_BYTES, budget);
               baseResult.coverage.detailChecks++;
@@ -279,7 +279,7 @@ export async function handleStoreSearch(request, guard = null, {skipDetail=()=>f
           }),
         );
         baseResult.results = baseResult.results.filter(Boolean);
-        if (baseResult.results.some(row => !row.detailChecked) && !baseResult.continuations.length) baseResult.coverage.partialReasons.push('商品詳細の未確認あり');
+        if (!listingOnly && baseResult.results.some(row => !row.detailChecked) && !baseResult.continuations.length) baseResult.coverage.partialReasons.push('商品詳細の未確認あり');
         if (baseResult.coverage.detailFailures.length) baseResult.coverage.partialReasons.push(...baseResult.coverage.detailFailures.map(f => f.reason));
         if (!baseResult.results.length) baseResult.status = 'no_hit';
       }
@@ -323,16 +323,16 @@ function recordSearchPage(coverage, response, stats, candidates) {
 }
 
 export async function fetchHtml(url, maxBytes, budget) {
-  if (budget.requests >= 12 || Date.now() >= budget.deadline) throw new Error('検索の通信・時間上限に達しました');
+  if (budget.requests >= (budget.maxRequests||12) || Date.now() >= budget.deadline) throw new Error('検索の通信・時間上限に達しました');
   let release;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort('timeout'), Math.min(FETCH_TIMEOUT_MS, budget.deadline - Date.now()));
+  const timer = setTimeout(() => controller.abort('timeout'), Math.min(budget.timeoutMs||FETCH_TIMEOUT_MS, budget.deadline - Date.now()));
   try {
     const initial = new URL(url);
     let target = initial.href;
     let response;
     for (let redirect = 0; redirect < 4; redirect++) {
-      if (budget.requests >= 12) throw new Error('検索の通信上限に達しました');
+      if (budget.requests >= (budget.maxRequests||12)) throw new Error('検索の通信上限に達しました');
       budget.requests++;
       if(budget.guard) {
         try {release=await budget.guard(target);}

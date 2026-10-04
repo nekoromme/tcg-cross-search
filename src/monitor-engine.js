@@ -1,7 +1,9 @@
 import { recordHistory } from './monitor-history.js';
 import {applyAutomaticPricing,priceAssessment} from './monitor-pricing.js';
+import {syncDiscoveryStores,dueDiscoveryStore,runStoreDiscovery,registerDiscoveryRows} from './monitor-discovery.js';
+import {discoveryBudget} from './monitor-cadence.js';
 // スケジュールと保存先を外から渡す。移行しても在庫判定・通知履歴を変えない。
-import { LIMITS, effectiveInterval, discoveryInterval, activeJob, activeTarget, addTarget, matchesRule, eligibility, observe, recordFailure, validateWebhook } from './monitor-core.js';
+import { effectiveInterval, discoveryInterval, activeJob, activeTarget, matchesRule, eligibility, observe, recordFailure, validateWebhook } from './monitor-core.js';
 
 export async function runMonitorTick(state, io) {
   const now=io.now?.() ?? Date.now();
@@ -24,13 +26,17 @@ export async function runMonitorTick(state, io) {
     }
     state.deliveryVersion=4;
   }
+  if(io.discoverStore)syncDiscoveryStores(state,now);
+  const grouped=dueDiscoveryStore(state,io,now);
   const usedHosts=new Set();
   // 発見検索の枠を先に確保する。30秒監視の店舗でも発見検索が永久に後回しにならない。
-  const job=state.jobs.filter(j=>j.nextAt<=now && activeJob(state,j))
+  const allowFallback=!state.discovery||(!grouped&&(state.discovery.nextFallbackAt||0)<=now&&discoveryBudget(state,'fallback',now).ok);
+  const job=allowFallback&&state.jobs.filter(j=>j.nextAt<=now && activeJob(state,j))
     .sort((a,b)=>a.nextAt-b.nextAt).find(j=>(state.hosts[io.storeHost(j.storeId)]||0)<=now);
+  if(grouped)usedHosts.add(io.storeHost(grouped.storeId));
   if(job)usedHosts.add(io.storeHost(job.storeId));
   // 同じ店は1巡で1商品、直近の接続から最低30秒。遅い店が他を止めないよう6店まで並列。
-  const due=state.targets.filter(t=>activeTarget(state,t) && t.nextAt<=now).sort((a,b)=>a.nextAt-b.nextAt);
+  const due=state.targets.filter(t=>activeTarget(state,t) && t.nextAt<=now).sort((a,b)=>Number(!!a.lastChecked)-Number(!!b.lastChecked)||a.nextAt-b.nextAt);
   const selected=[];
   for (const t of due) {
     const host=new URL(t.url).hostname;
@@ -39,7 +45,7 @@ export async function runMonitorTick(state, io) {
     if (selected.length===6) break;
   }
   // 次の予定を保存してから接続する。途中で実行環境が再起動しても連打しない。
-  for (const t of selected) t.nextAt=now+effectiveInterval(state,t)*1000;
+  for (const t of selected) t.nextAt=now+effectiveInterval(state,t,now)*1000;
   await io.save(state);
   await Promise.all(selected.map(async t=>{
     try {
@@ -53,28 +59,27 @@ export async function runMonitorTick(state, io) {
   }));
   await io.save(state);
 
-  // 新規掲載の発見は各条件・店舗につき30分おき。既知のページ確認と混ぜない。
+  // 店舗の一覧を全条件で共有。個別検索は低頻度の補完として残す。
+  if(grouped)await runStoreDiscovery(state,grouped,io,now);
   if (job) {
     const host=io.storeHost(job.storeId), rule=state.rules.find(r=>r.id===job.ruleId);
     state.hosts[host]=now+30_000;
     job.nextAt=now+discoveryInterval(state);
     const task=job.queue.shift() || {start:'',offset:0};
+    if(state.discovery){state.discovery.nextFallbackAt=now+120_000;discoveryBudget(state,'fallback',now);state.discovery.budget.fallback+=4;}
     await io.save(state);
     try {
-      const result=await io.discover(rule.config,job.storeId,task,{pausedUrls:state.targets.filter(t=>t.enabled===false&&t.storeId===job.storeId).map(t=>t.url)});
+      const result=await io.discover(rule.config,job.storeId,task,{listingOnly:!!state.discovery,pausedUrls:state.targets.filter(t=>t.enabled===false&&t.storeId===job.storeId).map(t=>t.url)});
+      if(state.discovery&&Number.isFinite(result.coverage?.requests))state.discovery.budget.fallback+=result.coverage.requests-4;
       if(result.accessLimited)throw Object.assign(new Error(result.error),{accessLimited:true,retryAt:result.retryAt});
       if (['error','blocked'].includes(result.status)) throw Object.assign(new Error('検索ページを取得できず'),{status:result.httpStatus});
-      let matched=0,registered=0;
-      for (const row of result.results||[]) if (matchesRule(row,rule.config)) {
-        matched++;
-        try { if(addTarget(state,rule,{...row,storeId:job.storeId},now))registered++; } catch { /* 店舗外リンクは登録しない。 */ }
-      }
+      const {matched,registered,limited}=registerDiscoveryRows(state,[rule],job.storeId,result.results,now,'rule-search',!job.lastAt);
       const key=t=>`${t.start||''}|${t.offset||0}`;
       job.seen.push(key(task)); job.rounds++;
       for (const next of result.continuations||[]) if (!job.seen.includes(key(next))&&!job.queue.some(t=>key(t)===key(next))) job.queue.push(next);
       job.lastAt=now;job.lastResult={at:now,status:result.status,matched,registered};
       job.error=(result.coverage?.partialReasons||[]).slice(0,3).join('／');
-      if(registered<matched)job.error=[job.error,'登録上限により一部の商品ページを未登録'].filter(Boolean).join('／');
+      if(limited)job.error=[job.error,'登録上限により一部の商品ページを未登録'].filter(Boolean).join('／');
       // 検索範囲は最大20バッチ。上限は明示し、完了と偽らない。
       if (job.queue.length && job.rounds<20) job.nextAt=now+60_000;
       else {
@@ -87,7 +92,7 @@ export async function runMonitorTick(state, io) {
       if ([403,429].includes(error.status)) state.hosts[host]=now+1800_000;
     }
   }
-  state.runs=[...(state.runs||[]),{at:now,checked:selected.length,discovered:job?{ruleId:job.ruleId,storeId:job.storeId,result:job.lastResult,error:job.error}:null,targets:state.targets.length,errors:state.targets.filter(t=>t.error).length}].slice(-1000);
+  state.runs=[...(state.runs||[]),{at:now,checked:selected.length,discovered:grouped?{storeId:grouped.storeId,mode:'store-listing',result:grouped.lastResult,error:grouped.error}:job?{ruleId:job.ruleId,storeId:job.storeId,result:job.lastResult,error:job.error}:null,targets:state.targets.length,errors:state.targets.filter(t=>t.error).length}].slice(-1000);
   await io.save(state);
   // 通知は履歴に保存後に送信。失敗しても在庫変化を失わず、次の巡回で再試行する。
   const pending=state.events.filter(e=>e.delivery==='pending'&&e.nextAt<=now).reverse();

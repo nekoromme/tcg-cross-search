@@ -10,6 +10,7 @@ import { identifyProduct } from '../public/catalog.js';
 import { productUrl } from './monitor-core.js';
 import { encodeMonitor, decodeMonitor, monitorFailure } from './monitor-storage.js';
 import {updateRulePrice} from './monitor-pricing.js';
+import {fetchDiscoveryListings} from './monitor-discovery.js';
 
 export const monitorResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function readCommand(request) {
@@ -51,10 +52,11 @@ export function makeMonitorIO(save, env = {}) {
       return {row:{title:parsed.title||'',price:parsed.price,stock:parsed.stock,priceState:parsed.priceState||'',
         detailChecked:Boolean(parsed.title),priceComparable:parsed.priceComparable,priceIssue:parsed.priceIssue},status:200};
     },
-    async discover(rule,storeId,task,{pausedUrls=[]}={}) {
+    discoverStore:(storeId,rules,profile)=>fetchDiscoveryListings(storeId,rules,profile,fetchHtml,guard),
+    async discover(rule,storeId,task,{pausedUrls=[],listingOnly=false}={}) {
       const paused=new Set(pausedUrls.map(url=>normalizeUrlKey(productUrl(url,storeId))));
       const params=new URLSearchParams({store:storeId,q:rule.query,sealed:'1',refresh:'1',depth:'standard',start:task.start||'',offset:String(task.offset||0),snapshot:task.snapshot||''});
-      return (await handleStoreSearch(new Request(`https://monitor.internal/api/search?${params}`),guard,{skipDetail:candidate=>{try{return paused.has(normalizeUrlKey(productUrl(candidate.url,storeId)));}catch{return false;}}})).json();
+      return (await handleStoreSearch(new Request(`https://monitor.internal/api/search?${params}`),guard,{listingOnly,skipDetail:candidate=>{try{return paused.has(normalizeUrlKey(productUrl(candidate.url,storeId)));}catch{return false;}}})).json();
     },
     notify:(webhook,event)=>sendDiscord(webhook,{...event,storeName:STORE_MAP.get(event.storeId)?.name}),
   };
