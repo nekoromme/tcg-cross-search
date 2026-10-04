@@ -31,6 +31,8 @@ export function applyAutomaticPricing(state,now=Date.now()) {
   const auto=state.automatic;if(!auto)return;
   const policy=auto.pricePolicy ||= initialPricePolicy(),changed=[];
   for(const rule of state.rules.filter(r=>r.automaticProductId)) {
+    const current=PRODUCTS.find(p=>p.id===rule.automaticProductId);
+    if(current&&rule.config.automaticProduct)rule.config.automaticProduct.aliases=current.aliases;
     const override=policy.overrides[rule.automaticProductId];
     const percent=override?.percent??policy.defaultPercent;
     const maxPrice=override?.maxPrice??null;
