@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Discord自動通知の設定 | TCG横断検索</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/monitor.css"><link rel="stylesheet" href="/automatic.css"></head>
+<body><main class="wrap">
+<header><a href="/">← 横断検索へ</a><h1>Discord自動通知の設定</h1><p>実際に通知する商品・上限・停止理由を確認できます。新弾と公式価格は自動で取り込みます。</p></header>
+<nav class="panel">Discord自動通知 ／ <a href="/monitor.html">この端末の個別監視</a></nav>
+<section class="panel"><p id="message" role="status">最新の設定を読み込み中…</p><div id="summary"></div><button id="refresh" type="button">最新の記録を読む</button></section>
+<section class="panel"><h2>監視する商品</h2><p class="help">通常は税込定価105%以下、30th CELEBRATIONの通常BOXは200%以下。送料別。変更はGitHubにログインして保存します。保存完了後、数分で反映を確認します。</p><label>商品を絞り込む<input id="filter" type="search" placeholder="GD01、ポケモン、停止など"></label><div id="products"></div></section>
+<section class="panel"><h2>相場の見直し</h2><div id="market"></div></section>
+<section class="panel"><h2>巡回と通知の速さ</h2><div id="cadence"></div><p class="help">初めて見つけた時刻は販売開始時刻とは限りません。巡回の間に完売した販売は把握できません。</p></section>
+<footer><a href="https://github.com/nekoromme/tcg-box-monitor-public/blob/monitor-state/inventory_status.md" target="_blank" rel="noopener">詳しい稼働ログ</a> ／ <a href="https://github.com/nekoromme/tcg-box-monitor-public/blob/main/config/inventory-notification-policy.json" target="_blank" rel="noopener">保存された設定と変更履歴</a></footer>
+</main><script type="module" src="/automatic.js"></script></body></html>

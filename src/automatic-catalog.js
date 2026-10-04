@@ -3,6 +3,7 @@
 import { PRODUCTS, identifyProduct, normalized } from '../public/catalog.js';
 import { addRule } from './monitor-core.js';
 import { applyAutomaticPricing } from './monitor-pricing.js';
+import { applyAutomaticPriceRecords, verifiedPrice } from './automatic-prices.js';
 
 export const RELEASE_FEED = 'https://raw.githubusercontent.com/nekoromme/tcg-box-monitor-public/refs/heads/monitor-state/inventory_releases.json';
 export const AUTO_LIMITS = {rules:80, targets:500, events:500, pagesPerRule:12};
@@ -13,7 +14,7 @@ const PINNED = ['gundam-gd01','gundam-gd05','pokemon-m6a'];
 export function catalogProducts(feed) {
   if (!feed?.seen_releases || typeof feed.seen_releases !== 'object') throw new Error('発売情報の形式を確認できません');
   // BOX定価が未確認の商品は価格台帳には入れず、発売日と検索条件だけを補完する。
-  const supplement={id:'onepiece-eb-04',game:'onepiece',code:'EB-04',name:'EGGHEAD CRISIS',aliases:['EGGHEAD CRISIS'],searchTerm:'EB-04',releaseDate:'2026-01-31',boxPrice:null,sources:[{url:'https://www.onepiece-cardgame.com/products/?page=1&subcategory=boosters'}]};
+  const supplement={id:'onepiece-eb-04',game:'onepiece',code:'EB-04',name:'EGGHEAD CRISIS',aliases:['EGGHEAD CRISIS'],searchTerm:'EB-04',releaseDate:'2026-01-31',boxPrice:null,sources:[{url:'https://www.onepiece-cardgame.com/products/boosters/eb04.php'}]};
   const products=new Map([...PRODUCTS,supplement].map(p=>[p.id,{...p,officialUrl:p.sources[0]?.url}]));
   for(const r of Object.values(feed.seen_releases)) {
     const game=GAME_IDS[r.game_id];
@@ -52,7 +53,11 @@ export function syncAutomaticCatalog(state,feed,now=Date.now()) {
   const auto=state.automatic;
   // 一時的に一覧から消えても削除しない。新弾は累積台帳へ保存し、日付で直近5弾を選ぶ。
   const merged=new Map((auto.catalog||[]).map(p=>[p.id,p]));
-  for(const p of catalogProducts(feed))merged.set(p.id,p);
+  for(const p of catalogProducts(feed)) {
+    const saved=auto.priceRecords?.[p.id],incoming=feed.prices?.records?.[p.id];
+    const record=verifiedPrice(p,incoming)&&incoming.checkedAt>=(saved?.checkedAt||0)?incoming:saved;
+    merged.set(p.id,{...p,...(verifiedPrice(p,record)||{})});
+  }
   const catalog=[...merged.values()],chosen=selectAutomaticProducts(catalog,now);
   auto.catalog=catalog;
   const wanted=new Set(chosen.map(p=>p.id)), added=[];
@@ -70,9 +75,10 @@ export function syncAutomaticCatalog(state,feed,now=Date.now()) {
       rule.automaticProductId=p.id;added.push(p);
     }
     // 再同期しても手動停止・通知済み状態・取得ログは維持する。
-    rule.config.automaticProduct={id:p.id,name:p.name,code:p.code,aliases:p.aliases||[p.name],releaseDate:p.releaseDate,officialUrl:p.officialUrl,boxPrice:p.boxPrice||null,pinned:!!p.pinned};
+    rule.config.automaticProduct={id:p.id,game:p.game,name:p.name,code:p.code,aliases:p.aliases||[p.name],releaseDate:p.releaseDate,officialUrl:p.officialUrl,boxPrice:p.boxPrice||null,priceEvidence:p.priceEvidence||null,pinned:!!p.pinned};
   }
   auto.products=chosen.map(p=>({id:p.id,game:p.game,name:p.name,query:p.searchTerm||p.name,releaseDate:p.releaseDate,pinned:!!p.pinned,officialUrl:p.officialUrl}));
+  applyAutomaticPriceRecords(state,feed.prices,now);
   applyAutomaticPricing(state,now);
   auto.lastSync=now;auto.nextSync=now+2*3600000;auto.error='';
   auto.log=[...(auto.log||[]),{at:now,kind:'catalog',count:chosen.length,added:added.map(p=>p.name)}].slice(-100);
