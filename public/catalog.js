@@ -78,8 +78,15 @@ function boxQueryBase(query) {
   // 登録済み商品だけを展開する。未登録の型番や追加条件は勝手に省かない。
   return match && identifyProduct(match[1]) ? match[1] : '';
 }
-export function comparePrice(row) {
-  const product = identifyProduct(row.title);
+export function comparePrice(row,automaticProduct=null) {
+  let product = identifyProduct(row.title);
+  if(automaticProduct) {
+    const p=automaticProduct,game=explicitGame(row.title),text=normalized(row.title);
+    const named=(p.aliases||[p.name]).some(a=>normalized(a).length>=5&&text.includes(normalized(a)));
+    const coded=p.code&&hasCode(row.title,p.code)&&(!/^(EB|ST)/i.test(p.code)||game===p.game||named);
+    if((game&&game!==p.game)||(product&&product.id!==p.id)||(!named&&!coded))return {status:'unknown',reason:'監視対象の商品と一致しないため定価を適用せず'};
+    product={...product,...p,sources:p.priceEvidence?.sources||product?.sources};
+  }
   if (!product) return { status: 'unknown', reason: '商品を定価台帳で特定できず' };
   const base = { productId: product.id, game: product.game, productName: product.name, sources: product.sources,
     referencePrice: product.boxPrice, basis: product.basis, checkedAt: product.checkedAt };

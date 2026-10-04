@@ -12,7 +12,7 @@ import { BUILD_COMMIT } from './build-info.js';
 import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.12.1';
+const APP_VERSION = '0.13.0';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;

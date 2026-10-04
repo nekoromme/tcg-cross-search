@@ -209,7 +209,9 @@ export function recordFailure(target, message, now, intervalSeconds, status=0) {
 }
 export function publicMonitor(state, minInterval=30) {
   const {webhook,hosts,...rest}=state,now=Date.now();
-  const targets=state.targets.map(t=>({...t,history:pruneHistory({...t}),monitorStatus:targetStatus(state,t),monitorActive:activeTarget(state,t)}));
+  const targets=state.targets.map(t=>({...t,history:pruneHistory({...t}),monitorStatus:targetStatus(state,t),monitorActive:activeTarget(state,t),
+    intervalSeconds:activeTarget(state,t)?effectiveInterval(state,t,now):null,
+    cadenceReason:t.focusUntil>now?'購入可能への変化を確認した重点枠':state.rules.some(r=>ruleEnabled(r)&&t.ruleIds.includes(r.id)&&r.config.automaticProduct?.pinned)?'指定商品の優先枠':'通常枠（店舗ごとの通信上限内）'}));
   const enabled=enabledTargets(state),active=enabled.slice(0,monitorLimits(state).targets);
   const discovery=state.discovery?{...state.discovery,policy:DISCOVERY_POLICY,
     stores:Object.fromEntries(Object.entries(state.discovery.stores).map(([id,store])=>{
@@ -221,5 +223,6 @@ export function publicMonitor(state, minInterval=30) {
     notificationConfigured:Boolean(webhook),limits:monitorLimits(state),minInterval,
     load:{activePages:active.length,waitingPages:Math.max(0,enabled.length-monitorLimits(state).targets),
       intervalSeconds:Math.max(effectiveInterval(state),...active.map(t=>effectiveInterval(state,t))),
+      intervalMinSeconds:active.length?Math.min(...active.map(t=>effectiveInterval(state,t))):0,
       discoverySeconds:Math.ceil(discoveryInterval(state)/1000)}};
 }

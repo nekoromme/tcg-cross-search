@@ -9,7 +9,7 @@ export function initialPricePolicy() {
   }};
 }
 export function priceAssessment(row,rule) {
-  const comparison=comparePrice(row||{});
+  const comparison=comparePrice(row||{},rule.automaticProduct?{...rule.automaticProduct,game:rule.game}:null);
   const referencePrice=comparison.status==='known'?comparison.referencePrice:null;
   const percent=rule.priceLimit==='all'?null:Number(rule.priceLimit);
   const absolute=rule.maxPrice||null;
@@ -47,7 +47,7 @@ export function applyAutomaticPricing(state,now=Date.now()) {
     const retail=rule.config.automaticProduct?.boxPrice||PRODUCTS.find(item=>item.id===p.id)?.boxPrice||null;
     const relative=retail?Math.floor(retail*Number(rule.config.priceLimit)/100):null;
     const absolute=rule.config.maxPrice;
-    return {...p,boxPrice:retail,pricePercent:Number(rule.config.priceLimit),notificationMaxPrice:relative&&absolute?Math.min(relative,absolute):relative||absolute,pricePolicyReason:rule.config.pricePolicyReason,priceStatus:retail?'ready':'reference_unknown'};
+    return {...p,boxPrice:retail,priceEvidence:rule.config.automaticProduct?.priceEvidence||null,pricePercent:Number(rule.config.priceLimit),notificationMaxPrice:relative&&absolute?Math.min(relative,absolute):relative||absolute,pricePolicyReason:rule.config.pricePolicyReason,priceStatus:retail?'ready':'reference_unknown'};
   });
   if(changed.length)auto.log=[...(auto.log||[]),{at:now,kind:'pricing',products:changed,defaultPercent:policy.defaultPercent}].slice(-100);
 }
