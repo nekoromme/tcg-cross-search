@@ -9,6 +9,7 @@ import { parseProductDetail } from './product-detail.js';
 import { identifyProduct } from '../public/catalog.js';
 import { productUrl } from './monitor-core.js';
 import { encodeMonitor, decodeMonitor, monitorFailure } from './monitor-storage.js';
+import {updateRulePrice} from './monitor-pricing.js';
 
 export const monitorResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function readCommand(request) {
@@ -63,6 +64,7 @@ export async function monitorCommand(state, body, {minInterval=30}={}) {
   const before=new Map(state.targets.map(t=>[t.id,activeTarget(state,t)]));
   const now=Date.now();
   switch(body.action) {
+    case 'rule-price': updateRulePrice(state,body.id,body,now); break;
     case 'automatic': {
       // 同期は既存領域だけを操作する。新しい端末の監視を無断で移動しない。
       state.automatic ||= {enabled:true,nextSync:0,log:[]};

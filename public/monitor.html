@@ -8,7 +8,7 @@
     <div class="monitorGrid">
       <label>ゲーム<select id="monitorGame"><option value="">すべて</option><option value="pokemon">ポケモンカード</option><option value="onepiece">ワンピース</option><option value="gundam">ガンダム</option><option value="dragonball">ドラゴンボール</option><option value="lorcana">ロルカナ</option></select></label>
       <label>監視する販売単位<select id="monitorUnit"><option value="box">BOXのみ</option><option value="sealed">BOX＋カートン・複数BOX</option></select></label>
-      <label>通知する価格<select id="monitorPrice"><option value="105">定価＋5%以内</option><option value="100">定価以下</option><option value="110">定価＋10%以内</option><option value="all">制限なし</option></select></label>
+      <label>通知する価格<select id="monitorPrice"><option value="105">定価＋5%以内</option><option value="100">定価以下</option><option value="110">定価＋10%以内</option><option value="150">定価の1.5倍以内</option><option value="200">定価の2倍以内</option><option value="all">制限なし</option></select></label>
       <label>商品価格の上限（円）<input id="monitorMax" type="number" inputmode="numeric" min="1" max="99999999" placeholder="指定なし"></label>
     </div>
     <label class="check"><input id="monitorPreorder" type="checkbox" checked>予約受付も通知する</label>
@@ -36,4 +36,4 @@
     <p class="help">切り替えても元の監視は停止しません。サーバー移行は、全体を一時停止してから書き出してください。通知先URLと合言葉は書き出しファイルに含めません。</p>
     <button id="exportState" type="button">移行用データを書き出す</button>
   </details>
-</main><script type="module" src="/monitor.js?v=0.9.1"></script></body></html>
+</main><script type="module" src="/monitor.js?v=0.11.0"></script></body></html>

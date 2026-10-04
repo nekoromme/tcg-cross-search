@@ -1,4 +1,5 @@
 import { recordHistory } from './monitor-history.js';
+import {applyAutomaticPricing,priceAssessment} from './monitor-pricing.js';
 // スケジュールと保存先を外から渡す。移行しても在庫判定・通知履歴を変えない。
 import { LIMITS, effectiveInterval, discoveryInterval, activeJob, activeTarget, addTarget, matchesRule, eligibility, observe, recordFailure, validateWebhook } from './monitor-core.js';
 
@@ -6,6 +7,7 @@ export async function runMonitorTick(state, io) {
   const now=io.now?.() ?? Date.now();
   state.lastTick=now;
   if (!state.enabled) return;
+  applyAutomaticPricing(state,now);
   // 古い版で登録された用品も、取得済みの商品名で除外して履歴を残す。
   for(const target of state.targets) {
     const rules=state.rules.filter(r=>target.ruleIds.includes(r.id));
@@ -112,11 +114,19 @@ export async function runMonitorTick(state, io) {
       continue;
     }
     const rule=state.rules.find(r=>r.id===event.ruleId);
-    if(!rule || eligibility(t.lastGood,rule.config)===false){event.delivery='cancelled';continue;}
+    // 価格条件変更前に作られた通知も、実際に送る価格で再判定する。
+    // 現在値だけが安くなっていても、昔の高い価格の通知を送らない。
+    const eventPrice=rule&&priceAssessment({...t.lastGood,...event,detailChecked:true},rule.config);
+    if(!rule || eligibility(t.lastGood,rule.config)===false || eventPrice.status!=='within_limit') {
+      event.delivery='cancelled';event.cancelledAt=now;event.cancelReason=eventPrice?.reason||'監視条件外';
+      const episode=t.episodes[event.ruleId];if(episode?.lastEvent===event.at)episode.active=false;
+      continue;
+    }
     // 直近の取得が不明なら通知を保留。確認できた古い在庫を現在の在庫として送らない。
     if (t.error || !t.lastGoodAt || now-t.lastGoodAt>Math.max(120_000,state.intervalSeconds*2000)) continue;
     if (!state.webhook) { event.delivery='screen'; continue; }
     event.attempts++;
+    event.priceCondition=eventPrice;
     event.nextAt=now+Math.min(300_000,30_000*2**event.attempts);
     await io.save(state);
     try {deliverySucceeded(state,event,await io.notify(state.webhook,event),now);}
@@ -152,8 +162,8 @@ export async function sendDiscord(webhook, event) {
   const url=new URL(validateWebhook(webhook)); url.searchParams.set('wait','true');
   const label=event.stock==='preorder'?'予約受付':event.stock==='test'?'通知テスト':'在庫あり';
   const content=event.kind==='catalog'
-    ? `【TCG在庫監視】${event.title}\n${event.products.slice(0,6).map(p=>`${p.name}（${p.releaseDate}）`).join('\n')+(event.products.length>6?`\nほか${event.products.length-6}弾`:'')}\nBOX・在庫／予約受付を価格付きで通知。価格上限なし。\n通知番号：${event.id}`
-    : `【TCG在庫監視】${label}\n${event.title.slice(0,500)}\n${event.storeName||event.storeId}：${event.price.toLocaleString('ja-JP')}円（送料別）\n${event.url}\n確認時刻：${new Date(event.at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}\n通知番号：${event.id}`;
+    ? `【TCG在庫監視】${event.title}\n${event.products.slice(0,6).map(p=>`${p.name}（${p.releaseDate}）`).join('\n')+(event.products.length>6?`\nほか${event.products.length-6}弾`:'')}\n通常BOXは定価＋5%以内（商品別の例外あり）。定価未確認は通知保留。\n通知番号：${event.id}`
+    : `【TCG在庫監視】${label}\n${event.title.slice(0,500)}\n${event.storeName||event.storeId}：${event.price.toLocaleString('ja-JP')}円（送料別）${event.priceCondition?.maxPrice?`\n通知上限：${event.priceCondition.maxPrice.toLocaleString('ja-JP')}円${event.priceCondition.referencePrice?`／定価：${event.priceCondition.referencePrice.toLocaleString('ja-JP')}円（${event.priceCondition.percent}%まで）`:''}`:''}\n${event.url}\n確認時刻：${new Date(event.at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}\n通知番号：${event.id}`;
   // Workersではredirect:errorがTypeErrorになる。manualで転送を追わず3xxも失敗にする。
   const response=await fetch(url,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(8000),
     headers:{'Content-Type':'application/json','User-Agent':'DiscordBot (https://github.com/nekoromme/tcg-cross-search, 0.10.4)'},body:JSON.stringify({
