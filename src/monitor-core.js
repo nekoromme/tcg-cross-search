@@ -2,7 +2,7 @@ import { recordHistory, pruneHistory, HISTORY_LIMITS } from './monitor-history.j
 // 実行場所に依存しない監視のルール。Cloudflareでも移行先のNode.jsでも共有する。
 import { STORE_MAP, STORES } from './stores.js';
 import { isLikelyProductUrl, isJunkTitle, looksLikeSingleCard, normalizeUrlKey, sanitizeQuery } from './search-common.js';
-import { matchesQuery, createQueryMatcher, identifyProduct, explicitGame } from '../public/catalog.js';
+import { PRODUCTS, matchesQuery, createQueryMatcher, identifyProduct, explicitGame } from '../public/catalog.js';
 import {priceAssessment} from './monitor-pricing.js';
 import {focusedInterval,recordAvailability,DISCOVERY_POLICY,storeCadence} from './monitor-cadence.js';
 import { productKind, isSpecialSet } from '../public/product-kind.js';
@@ -52,12 +52,14 @@ export function validateWebhook(value) {
   return url.href;
 }
 export function createRuleMatcher(rule) {
-  const matchers=[rule.query,...(rule.automaticProduct?.aliases||[])].map(createQueryMatcher);
+  const product=PRODUCTS.find(p=>p.id===rule.automaticProduct?.id)||rule.automaticProduct;
+  const matchers=[rule.query,...(product?.aliases||[])].map(createQueryMatcher);
   return row=>matchesRule(row,rule,title=>matchers.some(match=>match(title)));
 }
 export function matchesRule(row, rule, compiled=null) {
   if (!row.title || isJunkTitle(row.title) || looksLikeSingleCard(row.title)) return false;
-  const p=rule.automaticProduct;
+  // 永続化された旧aliasが残っていても、修正済みの照合台帳を優先する。
+  const p=PRODUCTS.find(p=>p.id===rule.automaticProduct?.id)||rule.automaticProduct;
   if(compiled?!compiled(row.title):!matchesQuery(row.title,rule.query) && !(p?.aliases||[]).some(alias=>matchesQuery(row.title,alias)))return false;
   if(p && (isSpecialSet(row.title) || /FUTURISTIC|プレミアムデッキ|カードセット/i.test(row.title) || /英語版|海外版|中国語|韓国語|繁体|繁體|簡体|简体|english|中古|開封済|空箱/i.test(row.title)))return false;
   const game = explicitGame(row.title) || identifyProduct(row.title)?.game;

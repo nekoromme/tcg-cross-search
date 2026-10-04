@@ -21,7 +21,7 @@ const checked = extra => ({ checkedAt: '2026-09-08', ...extra });
 export const PRODUCTS = [
   entry('pokemon', 'M6a', '30th CELEBRATION', '2026-09-16', 7200, 'official_box',
     [official('https://www.30th.pokemon-card.com/product/m6a'), box('https://www.pokemon-card.com/info/005510.html')],
-    { checkedAt:'2026-10-03', searchTerm:'30th CELEBRATION', aliases:['30th','30周年 セレブレーション'] }),
+    { checkedAt:'2026-10-03', searchTerm:'30th CELEBRATION', aliases:['ポケモン 30th','ポケモンカードゲーム 30th','ポケカ 30th','30周年 セレブレーション'] }),
   entry('pokemon', 'M1L', 'メガブレイブ', '2025-08-01', 5400, 'official_box',
     [official(pokemon+'m1/index.html'), box(center+'9900000006211.html')], checked({ searchTerm:'メガブレイブ' })),
   entry('pokemon', 'M1S', 'メガシンフォニア', '2025-08-01', 5400, 'pack_times_count',

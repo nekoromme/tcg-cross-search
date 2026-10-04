@@ -9,6 +9,9 @@ export function normalized(value) {
   return String(value || '').normalize('NFKC').toLowerCase().replace(/[\s\-‐‑–—_【】「」『』()（）・:：]/g, '');
 }
 export function explicitGame(title) {
+  // 監視していない作品も明記されていれば区別する。「30th」等の共通語で
+  // ヴァンガードの周年商品へポケモンの定価・通知条件を適用しない。
+  if(/ヴァンガード|vanguard|ヴァイスシュヴァルツ|weiss\s*schwarz|デュエル.?マスターズ|デュエマ|バトルスピリッツ|battle\s*spirits|magic.*gathering/i.test(title))return 'other';
   const games = Object.entries(GAME_PATTERNS).filter(([,pattern]) => pattern.test(title)).map(([game]) => game);
   return games.length === 1 ? games[0] : '';
 }
