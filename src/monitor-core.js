@@ -2,8 +2,9 @@ import { recordHistory, pruneHistory, HISTORY_LIMITS } from './monitor-history.j
 // 実行場所に依存しない監視のルール。Cloudflareでも移行先のNode.jsでも共有する。
 import { STORE_MAP, STORES } from './stores.js';
 import { isLikelyProductUrl, isJunkTitle, looksLikeSingleCard, normalizeUrlKey, sanitizeQuery } from './search-common.js';
-import { matchesQuery, identifyProduct, explicitGame } from '../public/catalog.js';
+import { matchesQuery, createQueryMatcher, identifyProduct, explicitGame } from '../public/catalog.js';
 import {priceAssessment} from './monitor-pricing.js';
+import {focusedInterval,recordAvailability,DISCOVERY_POLICY,storeCadence} from './monitor-cadence.js';
 import { productKind, isSpecialSet } from '../public/product-kind.js';
 
 export const LIMITS = { rules: 10, targets: 50, events: 80, intervalSeconds: 60, discoveryMs: 30 * 60_000 };
@@ -50,10 +51,14 @@ export function validateWebhook(value) {
       !/^\/api\/webhooks\/\d{15,22}\/[A-Za-z0-9_-]{30,150}$/.test(url.pathname)) throw new Error('Discordの通知用URLを入力して');
   return url.href;
 }
-export function matchesRule(row, rule) {
+export function createRuleMatcher(rule) {
+  const matchers=[rule.query,...(rule.automaticProduct?.aliases||[])].map(createQueryMatcher);
+  return row=>matchesRule(row,rule,title=>matchers.some(match=>match(title)));
+}
+export function matchesRule(row, rule, compiled=null) {
   if (!row.title || isJunkTitle(row.title) || looksLikeSingleCard(row.title)) return false;
   const p=rule.automaticProduct;
-  if(!matchesQuery(row.title,rule.query) && !(p?.aliases||[]).some(alias=>matchesQuery(row.title,alias)))return false;
+  if(compiled?!compiled(row.title):!matchesQuery(row.title,rule.query) && !(p?.aliases||[]).some(alias=>matchesQuery(row.title,alias)))return false;
   if(p && (isSpecialSet(row.title) || /FUTURISTIC|プレミアムデッキ|カードセット/i.test(row.title) || /英語版|海外版|中国語|韓国語|繁体|繁體|簡体|简体|english|中古|開封済|空箱/i.test(row.title)))return false;
   const game = explicitGame(row.title) || identifyProduct(row.title)?.game;
   if (game && rule.game && game !== rule.game) return false;
@@ -134,8 +139,9 @@ export function syncActivity(state,before,now=Date.now()) {
     if(active&&!target.error)target.nextAt=Math.min(target.nextAt,Math.max(now,(target.lastGoodAt||now)+effectiveInterval(state,target)*1000));
   }
 }
-export function effectiveInterval(state,target) {
+export function effectiveInterval(state,target,now=Date.now()) {
   const targets=enabledTargets(state).slice(0,monitorLimits(state).targets);
+  const focused=focusedInterval(state,target,targets,now);if(focused!==null)return focused;
   const host=target && new URL(target.url).hostname.replace(/^www\./,'');
   const hostCount=host?targets.filter(t=>new URL(t.url).hostname.replace(/^www\./,'')===host).length:0;
   // 商品確認は約8000回/日、同一店は約1200回/日を目安に間隔を延長。
@@ -166,8 +172,9 @@ export function observe(state, target, row, now) {
   const rules=state.rules.filter(r=>ruleEnabled(r) && target.ruleIds.includes(r.id));
   target.priceDecisions=Object.fromEntries(rules.map(r=>[r.id,{...priceAssessment(row,r.config),at:now}]));
   recordHistory(target,{kind:'observation',stock:row.stock,price:row.price,comparable:row.priceComparable,priceDecision:[...new Set(Object.values(target.priceDecisions).map(d=>d.reason))].join('／')},now);
+  recordAvailability(state,target,row,now);
   target.lastGood=row; target.lastGoodAt=now; target.title=row.title.slice(0,600); target.failures=0; target.error='';
-  target.nextAt=now+effectiveInterval(state,target)*1000;
+  target.nextAt=now+effectiveInterval(state,target,now)*1000;
   for (const rule of rules) {
     const value=eligibility(row,rule.config);
     const episode=target.episodes[rule.id] ||= { active:false, negatives:0, lastEvent:0 };
@@ -199,7 +206,18 @@ export function recordFailure(target, message, now, intervalSeconds, status=0) {
   target.nextAt=now+delay;
 }
 export function publicMonitor(state, minInterval=30) {
-  const {webhook,hosts,...rest}=state;
+  const {webhook,hosts,...rest}=state,now=Date.now();
   const targets=state.targets.map(t=>({...t,history:pruneHistory({...t}),monitorStatus:targetStatus(state,t),monitorActive:activeTarget(state,t)}));
-  return { ...rest, targets, historyLimits:HISTORY_LIMITS, notificationConfigured:Boolean(webhook), limits:monitorLimits(state), minInterval, load: { activePages:enabledTargets(state).slice(0,monitorLimits(state).targets).length, waitingPages:Math.max(0,enabledTargets(state).length-monitorLimits(state).targets), intervalSeconds:Math.max(effectiveInterval(state),...enabledTargets(state).slice(0,monitorLimits(state).targets).map(t=>effectiveInterval(state,t))), discoverySeconds:Math.ceil(discoveryInterval(state)/1000) } };
+  const enabled=enabledTargets(state),active=enabled.slice(0,monitorLimits(state).targets);
+  const discovery=state.discovery?{...state.discovery,policy:DISCOVERY_POLICY,
+    stores:Object.fromEntries(Object.entries(state.discovery.stores).map(([id,store])=>{
+      const running=state.enabled&&storeEnabled(state,id)&&state.jobs.some(j=>j.storeId===id&&activeJob(state,j));
+      return [id,{...store,storeName:STORE_MAP.get(id)?.name||id,...storeCadence(store,now),
+        ...(!running?{mode:'paused',reason:'設定により停止中',nextAt:null}:state.discovery.groupBudgetRetryAt>now?{mode:'waiting',reason:'本日の一覧探索枠を使い切ったため待機',nextAt:Math.max(store.nextAt,state.discovery.groupBudgetRetryAt)}:{})}];
+    }))}:null;
+  return {...rest,...(discovery?{discovery}:{}),targets,historyLimits:HISTORY_LIMITS,
+    notificationConfigured:Boolean(webhook),limits:monitorLimits(state),minInterval,
+    load:{activePages:active.length,waitingPages:Math.max(0,enabled.length-monitorLimits(state).targets),
+      intervalSeconds:Math.max(effectiveInterval(state),...active.map(t=>effectiveInterval(state,t))),
+      discoverySeconds:Math.ceil(discoveryInterval(state)/1000)}};
 }

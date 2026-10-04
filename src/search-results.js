@@ -16,7 +16,7 @@ import {
 import { productKind } from '../public/product-kind.js';
 import { createQueryMatcher } from '../public/catalog.js';
 
-export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, limit = 2, preferBoxes = false, diagnostics = {}) {
+export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, limit = 2, preferBoxes = false, diagnostics = {}, matchTitle = null) {
   if (!html) return [];
   // 同じページをもう一度解析・取得せず、候補が無い理由を数える。
   const counted = new Set();
@@ -25,7 +25,7 @@ export function findCandidateProducts(html, baseUrl, query, sealedOnly = true, l
   html = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ');
   const queryNorm = normalizeText(query);
   const tokens = makeQueryTokens(query);
-  const matchesQuery = createQueryMatcher(query);
+  const matchesQuery = matchTitle || createQueryMatcher(query);
   // 古い通販ページには href=/shop/... のように引用符のないリンクが残っている。
   // ブラウザーでは普通に開けるため、HTMLとして有効な両方の書き方を読む。
   const anchorRe = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
