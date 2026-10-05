@@ -7,6 +7,8 @@ import { eligibility } from '../src/monitor-core.js';
 import { fetchDiscoveryListings } from '../src/monitor-discovery.js';
 import { findBigwebProduct, parseBigwebCatalog } from '../src/bigweb.js';
 import { makeMonitorIO } from '../src/monitor-service.js';
+import { emptyMonitor } from '../src/monitor-core.js';
+import { syncAutomaticCatalog } from '../src/automatic-catalog.js';
 
 const fixture = readFileSync(new URL('./fixtures/bigweb-products-2026-10-05.json', import.meta.url), 'utf8');
 const store = STORE_MAP.get('bigweb');
@@ -60,4 +62,19 @@ test('登録後の巡回も商品画面ではなく同じ公式APIで在庫を�
   const result=await makeMonitorIO(async()=>{}).check({storeId:'bigweb',url:'https://www.bigweb.co.jp/ja/products/gundamgcg/cardViewer/3548567'});
   assert.deepEqual(urls,[store.catalog.url]);
   assert.equal(result.row.title.includes('GD05'),true);assert.equal(result.row.stock,'out_of_stock');assert.equal(result.row.price,6019);
+});
+
+test('保存済みの自動ルールへ新店ジョブを追加し、停止状態と送信済みIDを維持する', () => {
+  const state=emptyMonitor();state.automatic={enabled:true};
+  const feed=JSON.parse(readFileSync(new URL('./fixtures/official-stock-releases-2026-10-03.json',import.meta.url)));
+  syncAutomaticCatalog(state,feed,Date.parse('2026-10-05T00:00:00Z'));
+  const rule=state.rules.find(row=>row.automaticProductId==='gundam-gd05');
+  rule.config.storeIds=rule.config.storeIds.filter(id=>id!=='bigweb');
+  state.jobs=state.jobs.filter(job=>!(job.ruleId===rule.id&&job.storeId==='bigweb'));
+  rule.enabled=false;
+  state.events=[{id:'9070360c-deac-49a7-bfac-1cf400fca214',delivery:'sent',receiptId:'kept'}];
+  syncAutomaticCatalog(state,feed,Date.parse('2026-10-05T00:01:00Z'));
+  assert.equal(rule.config.storeIds.includes('bigweb'),true);
+  assert.equal(state.jobs.some(job=>job.ruleId===rule.id&&job.storeId==='bigweb'),true);
+  assert.equal(rule.enabled,false);assert.equal(state.events[0].receiptId,'kept');
 });
