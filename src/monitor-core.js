@@ -6,6 +6,7 @@ import { PRODUCTS, matchesQuery, createQueryMatcher, identifyProduct, explicitGa
 import {priceAssessment} from './monitor-pricing.js';
 import {focusedInterval,recordAvailability,DISCOVERY_POLICY,storeCadence} from './monitor-cadence.js';
 import { productKind, isSpecialSet } from '../public/product-kind.js';
+import {pokemon30thBoxIdentity} from '../public/pokemon-30th.js';
 
 export const LIMITS = { rules: 10, targets: 50, events: 80, intervalSeconds: 60, discoveryMs: 30 * 60_000 };
 export function monitorLimits(state) { return state.automatic?.enabled ? {...LIMITS,rules:80,targets:500,events:500} : LIMITS; }
@@ -58,6 +59,8 @@ export function createRuleMatcher(rule) {
 }
 export function matchesRule(row, rule, compiled=null) {
   if (!row.title || isJunkTitle(row.title) || looksLikeSingleCard(row.title)) return false;
+  const identity=pokemon30thBoxIdentity(row);
+  if(identity&&identity.status!=='confirmed')return false;
   // 永続化された旧aliasが残っていても、修正済みの照合台帳を優先する。
   const p=PRODUCTS.find(p=>p.id===rule.automaticProduct?.id)||rule.automaticProduct;
   if(compiled?!compiled(row.title):!matchesQuery(row.title,rule.query) && !(p?.aliases||[]).some(alias=>matchesQuery(row.title,alias)))return false;
@@ -173,7 +176,7 @@ export function observe(state, target, row, now) {
   if (!known) { recordFailure(target, '商品名・在庫・価格を確認できず', now, state.intervalSeconds); return; }
   const rules=state.rules.filter(r=>ruleEnabled(r) && target.ruleIds.includes(r.id));
   target.priceDecisions=Object.fromEntries(rules.map(r=>[r.id,{...priceAssessment(row,r.config),at:now}]));
-  recordHistory(target,{kind:'observation',stock:row.stock,price:row.price,comparable:row.priceComparable,priceDecision:[...new Set(Object.values(target.priceDecisions).map(d=>d.reason))].join('／')},now);
+  recordHistory(target,{kind:'observation',stock:row.stock,price:row.price,comparable:row.priceComparable,priceDecision:[...new Set(Object.values(target.priceDecisions).map(d=>d.reason))].join('／'),...(row.productIdentity?{identityDecision:row.productIdentity.reason}: {})},now);
   recordAvailability(state,target,row,now);
   target.lastGood=row; target.lastGoodAt=now; target.title=row.title.slice(0,600); target.failures=0; target.error='';
   target.nextAt=now+effectiveInterval(state,target,now)*1000;

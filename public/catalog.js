@@ -1,5 +1,6 @@
 import { PRODUCTS, CATALOG_UPDATED } from './catalog-data.js';
 import { productKind, isSpecialSet } from './product-kind.js';
+import { pokemon30thBoxIdentity } from './pokemon-30th.js';
 export { PRODUCTS, CATALOG_UPDATED };
 
 export const GAMES = { pokemon: 'ポケモンカード', onepiece: 'ワンピース', gundam: 'ガンダム', dragonball: 'ドラゴンボール（フュージョンワールド）', lorcana: 'ロルカナ', yugioh: '遊戯王' };
@@ -33,6 +34,7 @@ export function identifyProduct(title, gameHint = '') {
     (aliases.some(alias => text.includes(alias)) || (code && (!p.ambiguousCode || game === p.game) && code.test(original))));
   // 「EB01」など複数タイトルで使う番号は、ゲーム名・正式商品名がなければ未確定。
   if (matches.length !== 1) return null;
+  if(matches[0].product.id==='pokemon-m6a' && isSpecialSet(title))return null;
   return matches[0].product;
 }
 export function matchesQuery(title, query) {
@@ -64,11 +66,13 @@ export function createQueryMatcher(query) {
 }
 export function searchTerms(query) {
   const boxBase = boxQueryBase(query);
-  if (boxBase) return searchTerms(boxBase).map(term => `${term} BOX`);
+  if (boxBase) return [...new Set(searchTerms(boxBase).map(term => /BOX$/i.test(term)?term:`${term} BOX`))];
   const p = identifyProduct(query);
   if (!p) return [String(query).normalize('NFKC')];
   const q = normalized(query);
   if (![p.code, ...(p.aliases || [])].filter(Boolean).some(a => normalized(a) === q)) return [query];
+  // カードセットにもBOXと付く。店内検索を狭めても、最後は共通の商品同定で判定。
+  if(p.id==='pokemon-m6a')return ['30th CELEBRATION BOX','30th CELEBRATION'];
   // 店の検索には型番か正式名を使う。別表記での再検索は候補が無い場合に1回だけ。
   return [...new Set([p.searchTerm || p.name, p.name])];
 }
@@ -79,6 +83,8 @@ function boxQueryBase(query) {
   return match && identifyProduct(match[1]) ? match[1] : '';
 }
 export function comparePrice(row,automaticProduct=null) {
+  const identity=pokemon30thBoxIdentity(row);
+  if(identity&&identity.status!=='confirmed')return {status:'unknown',reason:identity.reason};
   let product = identifyProduct(row.title);
   if(automaticProduct) {
     const p=automaticProduct,game=explicitGame(row.title),text=normalized(row.title);

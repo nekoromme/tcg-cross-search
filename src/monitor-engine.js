@@ -14,7 +14,7 @@ export async function runMonitorTick(state, io) {
   for(const target of state.targets) {
     const rules=state.rules.filter(r=>target.ruleIds.includes(r.id));
     if(target.enabled!==false && target.lastGood && rules.length && rules.every(r=>r.automaticProductId) && !rules.some(r=>matchesRule(target.lastGood,r.config))) {
-      target.enabled=false;recordHistory(target,{kind:'pause',reason:'通常の日本語版BOXではないため対象外'},now);
+      target.enabled=false;recordHistory(target,{kind:'pause',reason:target.lastGood.productIdentity?.reason||'通常の日本語版BOXではないため対象外'},now);
       for(const event of state.events)if(event.targetId===target.id) {
         if(event.delivery==='pending')event.delivery='cancelled';
         // 送信済みの記録と受理IDは保持し、対象違いだったことだけ追記する。

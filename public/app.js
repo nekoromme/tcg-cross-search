@@ -59,7 +59,7 @@ async function init() {
     if (['grouped', 'list'].includes(saved.view)) els.resultView.value = saved.view;
     if (['price_asc', 'price_desc', 'stock', 'store', 'discount'].includes(saved.sort)) els.sortOrder.value = saved.sort;
     els.inStockOnly.checked = saved.inStockOnly === true;
-    if (['100','105','110','all'].includes(saved.priceLimit)) els.priceLimit.value = saved.priceLimit;
+    if (['100','105','110','200','all'].includes(saved.priceLimit)) els.priceLimit.value = saved.priceLimit;
     if (saved.maxPrice > 0) els.maxPrice.value = saved.maxPrice;
     els.includeUnknown.checked = saved.includeUnknown !== false;
     els.includePreorders.checked = saved.includePreorders !== false;

@@ -1,6 +1,7 @@
 import { productKind, isSpecialSet, KIND_LABELS } from './product-kind.js';
 import { comparePrice, withinPriceLimit, explicitGame, identifyProduct } from './catalog.js';
 import { groupProductRows, comparisonConditions } from './comparison-groups.js';
+import {pokemon30thBoxIdentity} from './pokemon-30th.js';
 
 // 取得順に左右されない並び替え。同価格のときは店名・商品URLで安定させる。
 export function flattenRows(storeResults, sort = 'price_asc') {
@@ -11,7 +12,10 @@ export function flattenRows(storeResults, sort = 'price_asc') {
       const key = `${result.store.id}:${item.url}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      rows.push({ ...item, comparison: comparePrice(item), kind: isSpecialSet(item.title) ? productKind(item.title) : item.kind || productKind(item.title),
+      const identity=pokemon30thBoxIdentity(item),classified=productKind(item.title);
+      // 旧キャッシュのkind=boxも再判定。パック・カートン自体の区分は保持する。
+      const kind=isSpecialSet(item.title)?classified:identity?.status==='uncertain'?'unknown':identity?.status==='excluded'&&classified==='box'?'special':item.kind||classified;
+      rows.push({ ...item, comparison: comparePrice(item), kind,
         price: Number.isFinite(item.price) && item.price > 0 ? item.price : null,
         storeId: result.store.id, storeName: result.store.name, storeNote: result.store.note || '',
         searchedAt: result.searchedAt });
