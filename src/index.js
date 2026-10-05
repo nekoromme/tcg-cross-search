@@ -10,9 +10,10 @@ import { routeMonitor } from './monitor-service.js';
 import { networkGuard } from './access-limits.js';
 import { BUILD_COMMIT } from './build-info.js';
 import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
+import { parseBigwebCatalog } from './bigweb.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.13.0';
+const APP_VERSION = '0.14.0';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;
@@ -97,6 +98,10 @@ export async function handleStoreSearch(request, guard = null, {skipDetail=()=>f
     continuations: [],
     rejectedUrls: [],
   };
+
+  if (store.catalog?.type === 'bigweb-json') {
+    return handleBigwebSearch(baseResult, store, query, forceRefresh, guard, skipDetail);
+  }
 
   try {
     const candidatesByUrl = new Map();
@@ -312,6 +317,58 @@ export async function handleStoreSearch(request, guard = null, {skipDetail=()=>f
     searchPages: baseResult.coverage.searchPages, partialReasons: baseResult.coverage.partialReasons,
     categories: baseResult.coverage.categories, remainingTasks: baseResult.continuations.length,
     detailFailureReasons: baseResult.coverage.detailFailures.map(f => f.reason), elapsedMs: baseResult.elapsedMs }));
+  const response = jsonResponse(baseResult);
+  response.headers.set('Cache-Control', forceRefresh || budget.limitHit ? 'no-store' : `public, max-age=${CACHE_SECONDS}`);
+  return response;
+}
+
+async function handleBigwebSearch(baseResult, store, query, forceRefresh, guard, skipDetail) {
+  const startedAt = Date.now();
+  // 公式APIは通常HTMLより応答が遅いことがある。1通信だけに絞り、タイムアウトだけ延ばす。
+  const budget = { deadline: Date.now() + 30_000, timeoutMs: 28_000, requests: 0, maxRequests: 1, guard };
+  try {
+    const response = await fetchHtml(store.catalog.url, SEARCH_HTML_MAX_BYTES, budget);
+    baseResult.httpStatus = response.status;
+    if ([403, 429].includes(response.status)) {
+      baseResult.status = 'blocked';
+      baseResult.error = 'サイト側が自動取得を拒否しました。回避せず手動確認に切り替えます。';
+    } else if (response.status < 200 || response.status >= 400 || response.truncated) {
+      baseResult.status = 'error';
+      baseResult.error = response.truncated ? '商品一覧の容量上限で未確認' : `HTTP ${response.status}`;
+    } else {
+      const diagnostics = {};
+      const catalog = parseBigwebCatalog(response.text, store, diagnostics);
+      const candidates = catalog.filter(row => matchesQuery(row.title, query) && !skipDetail(row));
+      baseResult.coverage.listing.productLinks = diagnostics.accepted;
+      baseResult.coverage.listing.matchingLinks = candidates.length;
+      baseResult.coverage.listing.excludedOther = diagnostics.excludedOther;
+      baseResult.coverage.pagesRead = 1;
+      baseResult.coverage.searchRequests = 1;
+      baseResult.coverage.candidateCount = candidates.length;
+      baseResult.coverage.searchPages.push({ url: store.catalog.url, outcome: 'official_json_api', products: diagnostics.items, accepted: diagnostics.accepted });
+      baseResult.coverage.noHitConfirmed = candidates.length === 0;
+      baseResult.results = candidates.map(row => {
+        const product = identifyProduct(row.title);
+        if (row.stock === 'in_stock' && product?.releaseDate && product.releaseDate > new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })) row.stock = 'preorder';
+        return { ...row, comparison: comparePrice(row) };
+      });
+      if (!candidates.length) baseResult.status = 'no_hit';
+    }
+  } catch (error) {
+    baseResult.status = 'error';
+    baseResult.error = safeErrorMessage(error);
+  }
+  if (budget.limitHit) {
+    baseResult.accessLimited = true;
+    baseResult.retryAt = budget.limitHit.retryAt;
+    baseResult.error = budget.limitHit.message;
+    baseResult.status = 'error';
+  }
+  baseResult.coverage.requests = budget.requests;
+  baseResult.elapsedMs = Date.now() - startedAt;
+  console.info(JSON.stringify({ event: 'store_search', version: APP_VERSION, store: store.id, status: baseResult.status,
+    pages: baseResult.coverage.pagesRead, details: 0, requests: budget.requests, listing: baseResult.coverage.listing,
+    searchPages: baseResult.coverage.searchPages, elapsedMs: baseResult.elapsedMs }));
   const response = jsonResponse(baseResult);
   response.headers.set('Cache-Control', forceRefresh || budget.limitHit ? 'no-store' : `public, max-age=${CACHE_SECONDS}`);
   return response;

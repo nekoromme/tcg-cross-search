@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "items": [
+    {"id":3447424,"name":"ガンダムカードゲーム ブースターパック Newtype Rising [GD01] BOX（24パック入）","stock_count":0,"is_sold_out":true,"game_id":186,"price":5200,"is_box":true,"is_preorder_item":false,"lang":0,"cardset":{"web":"GD01"}},
+    {"id":3548567,"name":"ガンダムカードゲーム ブースターパック Freedom Ascension [GD05] BOX（24パック入）","stock_count":0,"is_sold_out":true,"game_id":186,"price":6019,"is_box":true,"is_preorder_item":false,"lang":0,"cardset":{"web":"GD05"}},
+    {"id":3573303,"name":"ハーフストレージボックス(シャイニングガンダム)+GD05 8パックセット","stock_count":0,"is_sold_out":true,"game_id":186,"price":2300,"is_box":true,"is_preorder_item":false,"lang":0,"cardset":{"web":"SC01"}},
+    {"id":3548568,"name":"ガンダムカードゲーム カスタムデッキボックス Freedom Ascension [SC01]","stock_count":0,"is_sold_out":true,"game_id":186,"price":3850,"is_box":true,"is_preorder_item":false,"lang":0,"cardset":{"web":"SC01"}},
+    {"id":3548572,"name":"ガンダムカードゲーム スタートデッキ Heavy Dominion [ST14]","stock_count":0,"is_sold_out":true,"game_id":186,"price":1480,"is_box":true,"is_preorder_item":false,"lang":0,"cardset":{"web":"ST14"}}
+  ]
+}

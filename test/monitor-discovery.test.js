@@ -22,7 +22,7 @@ test('38弾を店舗単位に束ね、価格上限と送信済みIDを変更し�
   state.events=[{id:'9070360c-deac-49a7-bfac-1cf400fca214',delivery:'sent',receiptId:'kept'}];
   let calls=0;
   await runMonitorTick(state,{now:()=>now,storeHost:id=>new URL(STORE_MAP.get(id).home).hostname,save:async()=>{},discoverStore:async()=>{calls++;return {status:'ok',results:[],pages:[],requests:1};}});
-  assert.equal(state.rules.length,38);assert.equal(Object.keys(state.discovery.stores).length,17);assert.equal(calls,1);
+  assert.equal(state.rules.length,38);assert.equal(Object.keys(state.discovery.stores).length,18);assert.equal(calls,1);
   assert.equal(state.events[0].receiptId,'kept');assert.equal(state.automatic.pricePolicy.defaultPercent,105);
   assert.equal(state.automatic.pricePolicy.overrides['pokemon-m6a'].percent,200);
   assert(state.jobs.length>500); // 個別検索による補完も履歴ごと維持

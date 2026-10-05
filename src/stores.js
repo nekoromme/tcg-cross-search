@@ -174,6 +174,21 @@ export const STORES = [
     field: 'p',
     note: '条件付き候補。正規卸仕入れは販売店側の表明',
   },
+  {
+    id: 'bigweb',
+    games: ['gundam'],
+    name: 'BIGWEB／ビッグマジック',
+    home: 'https://www.bigweb.co.jp/',
+    action: 'https://www.bigweb.co.jp/ja/products/gundamgcg/boxes',
+    field: null,
+    catalog: {
+      type: 'bigweb-json',
+      url: 'https://api.bigweb.co.jp/products?game_id=186&is_box=1&in_stock=1',
+      gameId: 186,
+      productBase: 'https://www.bigweb.co.jp/ja/products/gundamgcg/cardViewer/',
+    },
+    note: '新品の国内向け通常ブースターBOXのみ。セット・デッキ用品・海外版は除外',
+  },
 ];
 
 export const STORE_MAP = new Map(STORES.map((store) => [store.id, store]));
@@ -185,6 +200,6 @@ export function buildStoreSearchUrl(store, query) {
   }
   // ユーザーがBOXを付けた検索でも、店が使う販売単位の表記へそろえる。
   const term = store.boxKeyword ? String(query).replace(/(^|\s)BOX(?=\s|$)/gi, `$1${store.boxKeyword}`) : query;
-  url.searchParams.set(store.field, term);
+  if (store.field) url.searchParams.set(store.field, term);
   return url.toString();
 }
