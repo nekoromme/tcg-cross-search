@@ -5,6 +5,7 @@ import {emptySearchEvidence} from './search-evidence.js';
 import {parseAttributes,cleanText,normalizeUrlKey} from './search-common.js';
 import {activeJob,addTarget,matchesRule,createRuleMatcher,ruleEnabled,storeEnabled} from './monitor-core.js';
 import {initDiscovery,discoveryStore,discoveryLog,storeCadence,discoveryBudget,focusStore,focusTarget} from './monitor-cadence.js';
+import {parseBigwebCatalog} from './bigweb.js';
 
 export function syncDiscoveryStores(state,now) {
   if(!initDiscovery(state,now))return;
@@ -102,6 +103,23 @@ export function discoverListingSources(html,currentUrl,store) {
 
 export async function fetchDiscoveryListings(storeId,rules,profile,fetchPage,guard) {
   const store=STORE_MAP.get(storeId),budget={requests:0,maxRequests:4,timeoutMs:15_000,deadline:Date.now()+25_000,guard};
+  if(store.catalog?.type==='bigweb-json') {
+    budget.maxRequests=1;budget.timeoutMs=28_000;budget.deadline=Date.now()+30_000;
+    const url=store.catalog.url,pages=[];
+    try {
+      const page=await fetchPage(url,2_000_000,budget);
+      if(page.status!==200||page.truncated)throw Object.assign(new Error('一覧を確認できず'),{status:page.status,code:page.truncated?'body_limit':'http_error'});
+      const stats={},catalog=parseBigwebCatalog(page.text,store,stats);
+      const matchers=rules.map(r=>createRuleMatcher(r.config));
+      const results=catalog.filter(row=>matchers.some(match=>match(row)));
+      pages.push({url,head:true,productLinks:stats.accepted,scope:'read',hasMore:false,order:'official_json_api'});
+      return {status:'ok',results,pages,sources:[{url,role:'official_json_api',lastAt:Date.now()}],sourceCursor:0,requests:budget.requests};
+    } catch(error) {
+      pages.push({url,scope:'error',httpStatus:error.status||null,reason:error.code||'fetch_failed'});
+      return {status:'error',results:[],pages,sources:[{url,role:'official_json_api'}],sourceCursor:0,requests:budget.requests,
+        httpStatus:error.status,accessLimited:!!error.accessLimited,retryAt:error.retryAt,error:'掲載一覧を確認できず'};
+    }
+  }
   let sources=structuredClone(profile.sources||[]);
   if(!sources.length)sources=[{url:buildStoreSearchUrl(store,'BOX'),role:'search'},{url:buildStoreSearchUrl(store,store.boxKeyword?'BOX':'ボックス'),role:'alternate'}].filter((s,i,all)=>all.findIndex(x=>x.url===s.url)===i);
   const usable=sources.filter(s=>!(s.disabledUntil>Date.now()));

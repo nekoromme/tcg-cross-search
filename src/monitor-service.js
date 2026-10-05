@@ -12,6 +12,7 @@ import { encodeMonitor, decodeMonitor, monitorFailure } from './monitor-storage.
 import {updateRulePrice,applyAutomaticPricing} from './monitor-pricing.js';
 import {applyAutomaticPriceRecords} from './automatic-prices.js';
 import {fetchDiscoveryListings} from './monitor-discovery.js';
+import {findBigwebProduct} from './bigweb.js';
 
 export const monitorResponse=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function readCommand(request) {
@@ -42,12 +43,14 @@ export function makeMonitorIO(save, env = {}) {
   return { save, storeHost:id=>new URL(STORE_MAP.get(id).home).hostname,
     async check(target) {
       const url=productUrl(target.url,target.storeId);
+      const store=STORE_MAP.get(target.storeId);
       let page;
-      try{page=await fetchHtml(url,900_000,{requests:0,deadline:Date.now()+30_000,guard});}
+      try{page=await fetchHtml(store.catalog?.type==='bigweb-json'?store.catalog.url:url,store.catalog?2_000_000:900_000,{requests:0,deadline:Date.now()+30_000,timeoutMs:store.catalog?28_000:undefined,guard});}
       catch(error){if(error.accessLimited)return {deferred:true,retryAt:error.retryAt,error:error.message};throw error;}
       if(page.status!==200) return {error:`商品ページ HTTP ${page.status}`,status:page.status};
       if(page.truncated) return {error:'商品ページの容量上限で未確認'};
-      const parsed=parseProductDetail(page.text);
+      const parsed=store.catalog?.type==='bigweb-json'?findBigwebProduct(page.text,store,url):parseProductDetail(page.text);
+      if(!parsed)return {error:'公式商品一覧で対象ページを確認できず'};
       const product=identifyProduct(parsed.title);
       if(parsed.stock==='in_stock'&&(target.releaseDate||product?.releaseDate)>new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'})) parsed.stock='preorder';
       return {row:{title:parsed.title||'',price:parsed.price,stock:parsed.stock,priceState:parsed.priceState||'',
