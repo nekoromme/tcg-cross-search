@@ -8,7 +8,7 @@ export function pruneHistory(target, now=Date.now()) {
 export function recordHistory(target, entry, now=Date.now()) {
   const rows=pruneHistory(target,now);
   const value=entry.kind==='observation'
-    ? {kind:'observation',stock:entry.stock,price:entry.price>0?entry.price:null,comparable:entry.comparable!==false,...(entry.priceDecision?{priceDecision:entry.priceDecision}:{})}
+    ? {kind:'observation',stock:entry.stock,price:entry.price>0?entry.price:null,comparable:entry.comparable!==false,...(entry.priceDecision?{priceDecision:entry.priceDecision}:{}),...(entry.identityDecision?{identityDecision:String(entry.identityDecision).slice(0,180)}:{})}
     : {kind:entry.kind,reason:String(entry.reason||'').slice(0,180)};
   const last=rows.at(-1);
   // 失敗・停止・再開が挟まれば別の行になる。過去と現在を勝手につながない。

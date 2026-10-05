@@ -15,7 +15,7 @@ export function normalizeSearch(input) {
     unit: pick(input.unit, ['box', 'sealed', 'all'], 'box'),
     sort: pick(input.sort, ['price_asc', 'price_desc', 'stock', 'store', 'discount'], 'price_asc'),
     inStockOnly: input.inStockOnly === true,
-    priceLimit: pick(input.priceLimit, ['100', '105', '110', 'all'], '105'),
+    priceLimit: pick(input.priceLimit, ['100', '105', '110', '200', 'all'], '105'),
     maxPrice: Number.isFinite(price) && price >= 1 && price <= 99999999 ? Math.floor(price) : null,
     includeUnknown: input.includeUnknown !== false,
     includePreorders: input.includePreorders !== false,

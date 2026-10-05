@@ -54,6 +54,7 @@ export function makeMonitorIO(save, env = {}) {
       const product=identifyProduct(parsed.title);
       if(parsed.stock==='in_stock'&&(target.releaseDate||product?.releaseDate)>new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'})) parsed.stock='preorder';
       return {row:{title:parsed.title||'',price:parsed.price,stock:parsed.stock,priceState:parsed.priceState||'',
+        ...(parsed.productIdentity?{productIdentity:parsed.productIdentity}:{}),...(parsed.packsPerBox!=null?{packsPerBox:parsed.packsPerBox}:{}),
         detailChecked:Boolean(parsed.title),priceComparable:parsed.priceComparable,priceIssue:parsed.priceIssue},status:200};
     },
     discoverStore:(storeId,rules,profile)=>fetchDiscoveryListings(storeId,rules,profile,fetchHtml,guard),

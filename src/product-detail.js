@@ -1,8 +1,10 @@
 import { cleanText, decodeHtmlEntities, extractPrice, extractStock, normalizeText, parseAttributes, parseMoney } from './search-common.js';
+import {pokemon30thBoxIdentity,explicitPacksPerBox} from '../public/pokemon-30th.js';
 
 export function parseProductDetail(html) {
   const out = { title: '', price: null, stock: 'unknown', stockQty: null };
   if (!html) return out;
+  let productDescription='';
 
   const scripts = html.match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) || [];
   for (const script of scripts) {
@@ -12,6 +14,7 @@ export function parseProductDetail(html) {
       const product = findProductJsonLd(JSON.parse(decodeHtmlEntities(bodyMatch[1]).trim()));
       if (!product) continue;
       if (product.name) out.title = cleanText(String(product.name));
+      productDescription=cleanText(String(product.description||''));
       const offers = Array.isArray(product.offers) ? product.offers[0] : product.offers;
       if (offers) {
         if (offers['@type'] === 'AggregateOffer' || (offers.price == null && (offers.lowPrice != null || offers.highPrice != null))) {
@@ -105,6 +108,16 @@ export function parseProductDetail(html) {
     out.priceIssue = '現在購入不可・販売価格未設定';
   }
   if (out.priceComparable === false) out.price = null;
+  const packsPerBox=explicitPacksPerBox(`${out.title} ${productDescription} ${mainText}`);
+  if(packsPerBox!==null)out.packsPerBox=packsPerBox;
+  const identity=pokemon30thBoxIdentity(out);
+  if(identity) {
+    // 「BOX」とだけ書かれた見出しでも、商品の内容物がカードセットなら除外。
+    // おすすめ商品やサイト共通ナビではなく、主商品の限定領域だけを確認する。
+    const contents=`${productDescription} ${mainText}`.normalize('NFKC');
+    out.productIdentity=/プロモカード[\s\S]{0,180}(?:各1枚|3枚)/.test(contents)&&/紙製カードスタンド|カードスタンド[\s\S]{0,50}3枚/.test(contents)
+      ?{productId:'pokemon-m6a',version:1,status:'excluded',reason:'プロモカードとカードスタンドのカードセット仕様'}:identity;
+  }
   return out;
 }
 
