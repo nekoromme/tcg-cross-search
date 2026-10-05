@@ -13,7 +13,7 @@ import { loadSearchSnapshot, saveSearchSnapshot } from './search-snapshot.js';
 import { parseBigwebCatalog } from './bigweb.js';
 export { InventoryMonitor } from './monitor-service.js';
 
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.14.1';
 const MAX_QUERY_LENGTH = 100;
 const CACHE_SECONDS = 600;
 const FETCH_TIMEOUT_MS = 9_000;

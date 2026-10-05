@@ -4,6 +4,7 @@ import { PRODUCTS, identifyProduct, normalized } from '../public/catalog.js';
 import { addRule } from './monitor-core.js';
 import { applyAutomaticPricing } from './monitor-pricing.js';
 import { applyAutomaticPriceRecords, verifiedPrice } from './automatic-prices.js';
+import { STORES } from './stores.js';
 
 export const RELEASE_FEED = 'https://raw.githubusercontent.com/nekoromme/tcg-box-monitor-public/refs/heads/monitor-state/inventory_releases.json';
 export const AUTO_LIMITS = {rules:80, targets:500, events:500, pagesPerRule:12};
@@ -11,6 +12,15 @@ const GAME_IDS = {pokemon_card:'pokemon',one_piece_card:'onepiece',gundam_card:'
 const OFFICIAL_HOSTS = {pokemon:['www.pokemon-card.com','www.30th.pokemon-card.com'],onepiece:['www.onepiece-cardgame.com'],gundam:['www.gundam-gcg.com'],dragonball:['www.dbs-cardgame.com'],lorcana:['www.takaratomy.co.jp'],yugioh:['www.yugioh-card.com']};
 const METHODS = new Set(['pokemon_official_product_card','pokemon_official_products_api','onepiece_official_product_link','gundam_official_booster_catalog','dragonball_official_product_link','lorcana_official_booster_detail','yugioh_official_embedded_catalog']);
 const PINNED = ['gundam-gd01','gundam-gd05','pokemon-m6a'];
+
+function syncAutomaticStores(state,rule,game,now) {
+  const allowed=STORES.filter(store=>!store.games||store.games.includes(game)).map(store=>store.id);
+  const previous=new Set(rule.config.storeIds||[]),added=allowed.filter(id=>!previous.has(id));
+  if(!added.length)return;
+  rule.config.storeIds=[...new Set([...previous,...added])].sort();
+  for(const storeId of added)if(!state.jobs.some(job=>job.ruleId===rule.id&&job.storeId===storeId))
+    state.jobs.push({ruleId:rule.id,storeId,nextAt:now,queue:[],seen:[],rounds:0,lastAt:null,error:''});
+}
 export function catalogProducts(feed) {
   if (!feed?.seen_releases || typeof feed.seen_releases !== 'object') throw new Error('発売情報の形式を確認できません');
   // BOX定価が未確認の商品は価格台帳には入れず、発売日と検索条件だけを補完する。
@@ -74,6 +84,9 @@ export function syncAutomaticCatalog(state,feed,now=Date.now()) {
       rule=addRule(state,{query:p.searchTerm||p.name,game:p.game,priceLimit:'105',includeUnknown:false,includePreorders:true},[],now);
       rule.automaticProductId=p.id;added.push(p);
     }
+    // 永続化済みの自動ルールにも、後から採用した対応店舗を履歴を消さず追加する。
+    // 店舗OFF・商品OFF・rule.enabledは変更せず、停止中の商品を再開しない。
+    syncAutomaticStores(state,rule,p.game,now);
     // 再同期しても手動停止・通知済み状態・取得ログは維持する。
     rule.config.automaticProduct={id:p.id,game:p.game,name:p.name,code:p.code,aliases:p.aliases||[p.name],releaseDate:p.releaseDate,officialUrl:p.officialUrl,boxPrice:p.boxPrice||null,priceEvidence:p.priceEvidence||null,pinned:!!p.pinned};
   }
