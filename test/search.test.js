@@ -5,7 +5,7 @@ import { extractStock, findCandidateProducts, normalizeText, parseProductDetail 
 
 test('tracks the expected 21 storefronts', () => {
   assert.equal(STORES.length, 21);
-  assert.equal(new Set(STORES.map((store) => store.id)).size, 20);
+  assert.equal(new Set(STORES.map((store) => store.id)).size, 21);
 });
 
 test('builds encoded store search URLs from a fixed whitelist', () => {
