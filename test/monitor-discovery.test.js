@@ -22,7 +22,7 @@ test('38弾を店舗単位に束ね、価格上限と送信済みIDを変更し�
   state.events=[{id:'9070360c-deac-49a7-bfac-1cf400fca214',delivery:'sent',receiptId:'kept'}];
   let calls=0;
   await runMonitorTick(state,{now:()=>now,storeHost:id=>new URL(STORE_MAP.get(id).home).hostname,save:async()=>{},discoverStore:async()=>{calls++;return {status:'ok',results:[],pages:[],requests:1};}});
-  assert.equal(state.rules.length,38);assert.equal(Object.keys(state.discovery.stores).length,18);assert.equal(calls,1);
+  assert.equal(state.rules.length,38);assert.equal(Object.keys(state.discovery.stores).length,19);assert.equal(calls,1);
   assert.equal(state.events[0].receiptId,'kept');assert.equal(state.automatic.pricePolicy.defaultPercent,105);
   assert.equal(state.automatic.pricePolicy.overrides['pokemon-m6a'].percent,200);
   assert(state.jobs.length>500); // 個別検索による補完も履歴ごと維持
@@ -113,4 +113,30 @@ test('実店舗の新着リンク・複数弾のBOX表記を取得済みの入�
   syncAutomaticCatalog(state,JSON.parse(readFileSync(new URL('./fixtures/official-stock-releases-2026-10-03.json',import.meta.url))),now);
   const fixtures=JSON.parse(readFileSync(new URL('./fixtures/discovery-listings-2026-10-04.json',import.meta.url)));
   for(const f of fixtures){const result=await fetchDiscoveryListings(f.storeId,state.rules.filter(r=>r.config.storeIds.includes(f.storeId)),{},async()=>page(f.html));assert.equal(result.status,'ok',f.storeId);assert(result.results.length>0,f.storeId);}
+});
+
+
+test('竜のしっぽは公式の新品欄を1回だけ読み、GD01通常BOXだけ登録候補にする',async()=>{
+  const state=emptyMonitor();state.automatic={enabled:true};
+  const releaseFeed=JSON.parse(readFileSync(new URL('./fixtures/official-stock-releases-2026-10-03.json',import.meta.url)));
+  syncAutomaticCatalog(state,releaseFeed,now);
+  const gd01=state.rules.find(r=>r.automaticProductId==='gundam-gd01');
+  const paused=state.rules.find(r=>r.automaticProductId==='gundam-gd02');paused.enabled=false;
+  syncAutomaticCatalog(state,releaseFeed,now+1);
+  assert(gd01.config.storeIds.includes('ryuunoshippo'));
+  assert(state.jobs.some(j=>j.ruleId===gd01.id&&j.storeId==='ryuunoshippo'));
+  assert.equal(paused.enabled,false);
+  const html=readFileSync(new URL('./fixtures/ryuunoshippo-new-products-2026-10-07.html',import.meta.url),'utf8');
+  let calls=0;
+  const result=await fetchDiscoveryListings('ryuunoshippo',[gd01],{},async url=>{
+    calls++;assert.equal(url,'https://www.ryuunoshippo7.com/product-group/2?view=recommend');
+    return page(html);
+  });
+  assert.equal(calls,1);
+  assert.equal(result.status,'ok');
+  assert.equal(result.results.length,1);
+  assert.equal(result.results[0].url,'https://www.ryuunoshippo7.com/product/1273');
+  assert.equal(result.results[0].price,5800);
+  assert.equal(result.results[0].stock,'out_of_stock');
+  assert.match(result.results[0].title,/GD01/);
 });

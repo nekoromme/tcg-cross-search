@@ -175,6 +175,15 @@ export const STORES = [
     note: '条件付き候補。正規卸仕入れは販売店側の表明',
   },
   {
+    id: 'ryuunoshippo',
+    games: ['gundam'],
+    name: '竜のしっぽ7号店',
+    home: 'https://www.ryuunoshippo7.com/',
+    action: 'https://www.ryuunoshippo7.com/product-group/2?view=recommend',
+    field: null,
+    note: '公式の新品・予約商品欄のみ。外箱傷み・輸送時の箱潰れ、返品連絡期限の表記差に注意',
+  },
+  {
     id: 'bigweb',
     games: ['gundam'],
     name: 'BIGWEB／ビッグマジック',
