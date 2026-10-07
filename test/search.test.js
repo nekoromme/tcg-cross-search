@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { STORES, buildStoreSearchUrl } from '../src/stores.js';
 import { extractStock, findCandidateProducts, normalizeText, parseProductDetail } from '../src/search.js';
 
-test('tracks the expected 20 storefronts', () => {
-  assert.equal(STORES.length, 20);
+test('tracks the expected 21 storefronts', () => {
+  assert.equal(STORES.length, 21);
   assert.equal(new Set(STORES.map((store) => store.id)).size, 20);
 });
 
